@@ -1,4 +1,5 @@
 export type TrackType = "synth" | "drums";
+export type WaveformType = "sine" | "triangle" | "sawtooth" | "square";
 
 export interface InstrumentParams {
   attack: number;
@@ -9,6 +10,13 @@ export interface InstrumentParams {
   resonance: number;
   gain: number;
   lofiAmount: number;
+  detune: number;
+  drive: number;
+  vibratoRate: number;
+  vibratoDepth: number;
+  oscWaveformA: WaveformType;
+  oscWaveformB: WaveformType;
+  oscMix: number;
 }
 
 export interface SynthStep {

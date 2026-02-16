@@ -1,6 +1,16 @@
 import { SongState, SynthStep, Track } from "../types/song";
 
 const midiToFreq = (midi: number): number => 440 * 2 ** ((midi - 69) / 12);
+const createDriveCurve = (amount: number): Float32Array => {
+  const samples = 512;
+  const curve = new Float32Array(samples);
+  const k = Math.max(0, amount) * 60 + 1;
+  for (let i = 0; i < samples; i += 1) {
+    const x = (i * 2) / (samples - 1) - 1;
+    curve[i] = ((1 + k) * x) / (1 + k * Math.abs(x));
+  }
+  return curve;
+};
 
 interface TickInfo {
   bar: number;
@@ -60,6 +70,8 @@ export const getEffectiveLoopBars = (song: SongState): number => {
 
 export class AudioEngine {
   private context: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
+  private masterVolume = 0.8;
   private isPlaying = false;
   private lookaheadMs = 25;
   private scheduleAheadTime = 0.15;
@@ -70,11 +82,17 @@ export class AudioEngine {
   private getSong: (() => SongState) | null = null;
   private tickListener: ((info: TickInfo) => void) | null = null;
   private noiseBuffer: AudioBuffer | null = null;
+  private loopStartBar: number | null = null;
+  private loopEndBar: number | null = null;
+  private mutedTrackIds = new Set<string>();
 
   async ensureContext() {
     if (!this.context) {
       this.context = new AudioContext();
       this.noiseBuffer = this.createNoiseBuffer(this.context);
+      this.masterGain = this.context.createGain();
+      this.masterGain.gain.setValueAtTime(this.masterVolume, this.context.currentTime);
+      this.masterGain.connect(this.context.destination);
     }
     if (this.context.state === "suspended") {
       await this.context.resume();
@@ -85,7 +103,33 @@ export class AudioEngine {
     this.tickListener = listener;
   }
 
+  setMutedTrackIds(trackIds: string[]) {
+    this.mutedTrackIds = new Set(trackIds);
+  }
+
+  setLoopRange(startBar: number | null, endBar: number | null = null) {
+    if (startBar === null || endBar === null) {
+      this.loopStartBar = null;
+      this.loopEndBar = null;
+      return;
+    }
+    const start = Math.max(0, Math.min(startBar, endBar));
+    const end = Math.max(startBar, endBar);
+    this.loopStartBar = start;
+    this.loopEndBar = end;
+
+    if (this.currentBar < start || this.currentBar > end) {
+      this.currentBar = start;
+      this.currentStep = 0;
+      this.tickListener?.({ bar: this.currentBar, step: this.currentStep });
+    }
+  }
+
   async start(getSong: () => SongState) {
+    await this.play(getSong, true);
+  }
+
+  async play(getSong: () => SongState, resetPosition = false) {
     await this.ensureContext();
     if (!this.context || this.isPlaying) {
       return;
@@ -93,23 +137,62 @@ export class AudioEngine {
 
     this.getSong = getSong;
     this.isPlaying = true;
+    const loopStart = this.loopStartBar ?? 0;
+    if (resetPosition) {
+      this.currentBar = loopStart;
+      this.currentStep = 0;
+      this.tickListener?.({ bar: this.currentBar, step: this.currentStep });
+    } else if (this.loopStartBar !== null && this.loopEndBar !== null) {
+      if (this.currentBar < this.loopStartBar || this.currentBar > this.loopEndBar) {
+        this.currentBar = this.loopStartBar;
+        this.currentStep = 0;
+        this.tickListener?.({ bar: this.currentBar, step: this.currentStep });
+      }
+    }
     this.nextStepTime = this.context.currentTime + 0.02;
-    this.currentBar = 0;
-    this.currentStep = 0;
     this.scheduleAheadTime = Math.max(0.12, (this.context.baseLatency || 0) + 0.1);
 
     this.schedulerLoop();
   }
 
-  stop() {
+  pause() {
+    if (!this.isPlaying) {
+      return;
+    }
     if (this.timerId !== null) {
       window.clearTimeout(this.timerId);
       this.timerId = null;
     }
     this.isPlaying = false;
+  }
+
+  stop() {
+    this.pause();
+    if (!this.context) {
+      return;
+    }
+    this.currentBar = this.loopStartBar ?? 0;
     this.currentStep = 0;
-    this.currentBar = 0;
-    this.tickListener?.({ bar: 0, step: 0 });
+    this.nextStepTime = this.context.currentTime + 0.02;
+    this.tickListener?.({ bar: this.currentBar, step: this.currentStep });
+  }
+
+  setMasterVolume(value: number) {
+    const clamped = Math.max(0, Math.min(1, value));
+    this.masterVolume = clamped;
+    if (!this.context || !this.masterGain) {
+      return;
+    }
+    const when = this.context.currentTime;
+    this.masterGain.gain.cancelScheduledValues(when);
+    this.masterGain.gain.setTargetAtTime(clamped, when, 0.01);
+  }
+
+  private getOutputNode(): AudioNode | null {
+    if (!this.context) {
+      return null;
+    }
+    return this.masterGain ?? this.context.destination;
   }
 
   get playing() {
@@ -145,15 +228,31 @@ export class AudioEngine {
     this.nextStepTime += sixteenth * stepFactor;
 
     this.currentStep += 1;
-    const loopBars = getEffectiveLoopBars(song);
+    const { start, length } = this.getLoopBounds(song);
     if (this.currentStep >= 16) {
       this.currentStep = 0;
-      this.currentBar = (this.currentBar + 1) % loopBars;
+      this.currentBar += 1;
+      if (this.currentBar >= start + length) {
+        this.currentBar = start;
+      }
     }
+  }
+
+  private getLoopBounds(song: SongState): { start: number; length: number } {
+    if (this.loopStartBar !== null && this.loopEndBar !== null) {
+      const maxBar = Math.max(0, song.bars - 1);
+      const start = Math.max(0, Math.min(this.loopStartBar, maxBar));
+      const end = Math.max(start, Math.min(this.loopEndBar, maxBar));
+      return { start, length: Math.max(1, end - start + 1) };
+    }
+    return { start: 0, length: getEffectiveLoopBars(song) };
   }
 
   private scheduleStep(song: SongState, bar: number, step: number, when: number) {
     for (const track of song.tracks) {
+      if (this.mutedTrackIds.has(track.id)) {
+        continue;
+      }
       const patternId = track.lane[bar] ?? track.lane[0];
       const pattern = track.patterns[patternId];
       if (!pattern) {
@@ -193,39 +292,115 @@ export class AudioEngine {
     if (!this.context) {
       return;
     }
+    const output = this.getOutputNode();
+    if (!output) {
+      return;
+    }
 
-    const { attack, decay, sustain, release, cutoff, resonance, gain, lofiAmount } = track.instrument;
+    const {
+      attack,
+      decay,
+      sustain,
+      release,
+      cutoff,
+      resonance,
+      gain,
+      lofiAmount,
+      detune,
+      drive,
+      vibratoRate,
+      vibratoDepth,
+      oscWaveformA,
+      oscWaveformB,
+      oscMix,
+    } = track.instrument;
     const stepDuration = 60 / tempo / 4;
     const noteDuration = Math.max(0.04, stepDuration * lengthSteps);
+    const safeAttack = Math.max(0.0025, attack);
+    const safeRelease = Math.max(0.01, release);
 
-    const osc = this.context.createOscillator();
-    osc.type = lofiAmount > 0.5 ? "square" : "sawtooth";
-    osc.frequency.setValueAtTime(midiToFreq(pitch), when);
+    const oscA = this.context.createOscillator();
+    const oscB = this.context.createOscillator();
+    oscA.type = oscWaveformA;
+    oscB.type = oscWaveformB;
+    const baseFreq = midiToFreq(pitch);
+    oscA.frequency.setValueAtTime(baseFreq, when);
+    oscB.frequency.setValueAtTime(baseFreq, when);
+    const detuneCents = Math.max(0, detune);
+    oscA.detune.setValueAtTime(-detuneCents * 0.5, when);
+    oscB.detune.setValueAtTime(detuneCents * 0.5, when);
+
+    const mix = this.context.createGain();
+    const aGain = this.context.createGain();
+    const bGain = this.context.createGain();
+    const mixAmount = Math.max(0, Math.min(1, oscMix));
+    const oscFadeIn = 0.0015;
+    const oscFadeOut = 0.003;
+    aGain.gain.setValueAtTime(0, when);
+    bGain.gain.setValueAtTime(0, when);
+    aGain.gain.linearRampToValueAtTime(1 - mixAmount, when + oscFadeIn);
+    bGain.gain.linearRampToValueAtTime(mixAmount, when + oscFadeIn);
+
+    let lfo: OscillatorNode | null = null;
+    let lfoDepth: GainNode | null = null;
+    if (vibratoDepth > 0.001 && vibratoRate > 0.001) {
+      lfo = this.context.createOscillator();
+      lfoDepth = this.context.createGain();
+      lfo.type = "sine";
+      lfo.frequency.setValueAtTime(vibratoRate, when);
+      lfoDepth.gain.setValueAtTime(vibratoDepth, when);
+      lfo.connect(lfoDepth);
+      lfoDepth.connect(oscA.detune);
+      lfoDepth.connect(oscB.detune);
+    }
 
     const filter = this.context.createBiquadFilter();
     filter.type = "lowpass";
     filter.frequency.setValueAtTime(Math.max(120, cutoff * (1 - lofiAmount * 0.3)), when);
     filter.Q.setValueAtTime(Math.max(0.001, resonance), when);
 
+    const shaper = this.context.createWaveShaper();
+    shaper.curve = createDriveCurve(Math.max(0, Math.min(1, drive))) as unknown as Float32Array<ArrayBuffer>;
+    shaper.oversample = "2x";
+
     const amp = this.context.createGain();
     const peak = gain * velocity;
 
-    amp.gain.setValueAtTime(0.0001, when);
-    amp.gain.linearRampToValueAtTime(peak, when + attack);
-    amp.gain.linearRampToValueAtTime(peak * sustain, when + attack + decay);
+    amp.gain.setValueAtTime(0, when);
+    amp.gain.linearRampToValueAtTime(peak, when + safeAttack);
+    amp.gain.linearRampToValueAtTime(peak * sustain, when + safeAttack + decay);
     amp.gain.setValueAtTime(peak * sustain, when + noteDuration);
-    amp.gain.linearRampToValueAtTime(0.0001, when + noteDuration + release);
+    amp.gain.linearRampToValueAtTime(0.0001, when + noteDuration + safeRelease);
 
-    osc.connect(filter);
+    oscA.connect(aGain);
+    oscB.connect(bGain);
+    aGain.connect(mix);
+    bGain.connect(mix);
+    mix.connect(shaper);
+    shaper.connect(filter);
     filter.connect(amp);
-    amp.connect(this.context.destination);
+    amp.connect(output);
 
-    osc.start(when);
-    osc.stop(when + noteDuration + release + 0.02);
+    oscA.start(when);
+    oscB.start(when);
+    lfo?.start(when);
+    const stopAt = when + noteDuration + safeRelease + 0.02;
+    const fadeOutAt = Math.max(when + oscFadeIn, stopAt - oscFadeOut);
+    aGain.gain.setValueAtTime(1 - mixAmount, fadeOutAt);
+    bGain.gain.setValueAtTime(mixAmount, fadeOutAt);
+    aGain.gain.linearRampToValueAtTime(0.0001, stopAt);
+    bGain.gain.linearRampToValueAtTime(0.0001, stopAt);
+    oscA.stop(stopAt);
+    oscB.stop(stopAt);
+    lfo?.stop(stopAt);
   }
 
   private playKick(track: Track, when: number, velocity: number) {
     if (!this.context) {
+      return;
+    }
+    const output = this.getOutputNode();
+    if (!output) {
       return;
     }
 
@@ -242,7 +417,7 @@ export class AudioEngine {
     amp.gain.exponentialRampToValueAtTime(0.0001, when + decay);
 
     osc.connect(amp);
-    amp.connect(this.context.destination);
+    amp.connect(output);
 
     osc.start(when);
     osc.stop(when + decay + 0.02);
@@ -250,6 +425,10 @@ export class AudioEngine {
 
   private playSnare(track: Track, when: number, velocity: number) {
     if (!this.context || !this.noiseBuffer) {
+      return;
+    }
+    const output = this.getOutputNode();
+    if (!output) {
       return;
     }
 
@@ -277,10 +456,10 @@ export class AudioEngine {
 
     noise.connect(noiseFilter);
     noiseFilter.connect(noiseAmp);
-    noiseAmp.connect(this.context.destination);
+    noiseAmp.connect(output);
 
     tone.connect(toneAmp);
-    toneAmp.connect(this.context.destination);
+    toneAmp.connect(output);
 
     noise.start(when);
     noise.stop(when + decay + 0.02);
@@ -290,6 +469,10 @@ export class AudioEngine {
 
   private playHat(track: Track, when: number, velocity: number) {
     if (!this.context || !this.noiseBuffer) {
+      return;
+    }
+    const output = this.getOutputNode();
+    if (!output) {
       return;
     }
 
@@ -306,7 +489,7 @@ export class AudioEngine {
 
     source.connect(hp);
     hp.connect(amp);
-    amp.connect(this.context.destination);
+    amp.connect(output);
 
     source.start(when);
     source.stop(when + 0.05);

@@ -1,20 +1,7 @@
 import { SongState } from "../types/song";
 
-const synthSteps = Array.from({ length: 16 }, (_, i) => {
-  if (i % 4 === 0) {
-    return [{ pitch: 60 + (i % 8 === 0 ? 0 : 4), length: 1, velocity: 0.9 }];
-  }
-  return [];
-});
-
-const drumSteps = Array.from({ length: 16 }, (_, i) => ({
-  kick: i % 4 === 0 ? 1 : 0,
-  snare: i % 8 === 4 ? 1 : 0,
-  hat: i % 2 === 0 ? 0.6 : 0,
-}));
-
-const emptySynthSteps = Array.from({ length: 16 }, () => []);
-const emptyDrumSteps = Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
+const createEmptySynthSteps = () => Array.from({ length: 16 }, () => []);
+const createEmptyDrumSteps = () => Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
 
 export const createDefaultSong = (): SongState => ({
   tempo: 120,
@@ -22,8 +9,8 @@ export const createDefaultSong = (): SongState => ({
   bars: 8,
   tracks: [
     {
-      id: "t-synth",
-      name: "Lead Synth",
+      id: "t-lead",
+      name: "Lead",
       type: "synth",
       instrument: {
         attack: 0.01,
@@ -34,15 +21,47 @@ export const createDefaultSong = (): SongState => ({
         resonance: 1,
         gain: 0.45,
         lofiAmount: 0,
+        detune: 6,
+        drive: 0.12,
+        vibratoRate: 5.5,
+        vibratoDepth: 8,
+        oscWaveformA: "sawtooth",
+        oscWaveformB: "square",
+        oscMix: 0.5,
       },
       patterns: {
         "1": {
           type: "synth",
-          steps: synthSteps,
+          steps: createEmptySynthSteps(),
         },
-        "2": {
+      },
+      lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
+    },
+    {
+      id: "t-bass",
+      name: "Bass",
+      type: "synth",
+      instrument: {
+        attack: 0.01,
+        decay: 0.22,
+        sustain: 0.45,
+        release: 0.2,
+        cutoff: 1500,
+        resonance: 1.2,
+        gain: 0.55,
+        lofiAmount: 0,
+        detune: 3,
+        drive: 0.18,
+        vibratoRate: 2.2,
+        vibratoDepth: 4,
+        oscWaveformA: "square",
+        oscWaveformB: "sawtooth",
+        oscMix: 0.35,
+      },
+      patterns: {
+        "1": {
           type: "synth",
-          steps: emptySynthSteps,
+          steps: createEmptySynthSteps(),
         },
       },
       lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
@@ -60,15 +79,18 @@ export const createDefaultSong = (): SongState => ({
         resonance: 0.2,
         gain: 0.7,
         lofiAmount: 0,
+        detune: 0,
+        drive: 0.08,
+        vibratoRate: 0,
+        vibratoDepth: 0,
+        oscWaveformA: "triangle",
+        oscWaveformB: "triangle",
+        oscMix: 0.5,
       },
       patterns: {
         "1": {
           type: "drums",
-          steps: drumSteps,
-        },
-        "2": {
-          type: "drums",
-          steps: emptyDrumSteps,
+          steps: createEmptyDrumSteps(),
         },
       },
       lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
