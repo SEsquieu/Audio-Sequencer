@@ -229,6 +229,7 @@ function App() {
   const songRef = useRef<SongState>(song);
   const octaveTransitionTimerRef = useRef<number | null>(null);
   const suppressBarClickRef = useRef(false);
+  const activeSynthPointerIdRef = useRef<number | null>(null);
   const timelineRowRefs = useRef<Array<HTMLDivElement | null>>([]);
   const syncingTimelineScrollRef = useRef(false);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
@@ -625,11 +626,49 @@ function App() {
       return;
     }
     event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    activeSynthPointerIdRef.current = event.pointerId;
     setSynthDrag({
       startStep: stepIndex,
       endStep: stepIndex,
       pitch,
       moved: false,
+    });
+  };
+
+  const onSynthPointerMove = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!synthDrag) {
+      return;
+    }
+    if (activeSynthPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+    if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) {
+      return;
+    }
+
+    event.preventDefault();
+    const el = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+    const cell = el?.closest<HTMLButtonElement>("button[data-synth-cell='1']");
+    if (!cell) {
+      return;
+    }
+
+    const pitch = Number(cell.dataset.pitch);
+    const stepIndex = Number(cell.dataset.step);
+    if (!Number.isFinite(pitch) || !Number.isFinite(stepIndex)) {
+      return;
+    }
+
+    setSynthDrag((prev) => {
+      if (!prev || prev.pitch !== pitch || prev.endStep === stepIndex) {
+        return prev;
+      }
+      return {
+        ...prev,
+        endStep: stepIndex,
+        moved: prev.moved || stepIndex !== prev.startStep,
+      };
     });
   };
 
@@ -670,7 +709,10 @@ function App() {
       return;
     }
 
-    const onPointerDone = () => finalizeSynthDrag();
+    const onPointerDone = () => {
+      activeSynthPointerIdRef.current = null;
+      finalizeSynthDrag();
+    };
     window.addEventListener("pointerup", onPointerDone);
     window.addEventListener("pointercancel", onPointerDone);
     return () => {
@@ -1056,7 +1098,11 @@ function App() {
                 synthVisual !== "off" ? "on" : "",
                 `note-${synthVisual}`,
               ].join(" ")}
+              data-synth-cell="1"
+              data-step={step}
+              data-pitch={pitch}
               onPointerDown={(event) => onSynthPointerDown(step, pitch, event)}
+              onPointerMove={onSynthPointerMove}
               onPointerEnter={(event) => onSynthPointerEnter(step, pitch, event)}
             />
           );
