@@ -1,4 +1,4 @@
-import { JsonPatchOp, PatchMeta, SongState } from "../types/song";
+import { JsonPatchOp, PatchMeta, SongState, SynthStep } from "../types/song";
 
 const makePatch = (
   id: string,
@@ -19,6 +19,62 @@ export interface AiScope {
   selectedTrackId?: string;
   selectedBar?: number;
 }
+
+const whiteKeyClasses = new Set([0, 2, 4, 5, 7, 9, 11]);
+const isWhiteKey = (pitch: number) => whiteKeyClasses.has(((pitch % 12) + 12) % 12);
+
+const snapToWhiteKey = (pitch: number): number => {
+  if (isWhiteKey(pitch)) {
+    return pitch;
+  }
+
+  let down = pitch - 1;
+  let up = pitch + 1;
+  while (down >= 0 || up <= 127) {
+    if (down >= 0 && isWhiteKey(down)) {
+      return down;
+    }
+    if (up <= 127 && isWhiteKey(up)) {
+      return up;
+    }
+    down -= 1;
+    up += 1;
+  }
+  return pitch;
+};
+
+const nextPatternIdFromRecord = (patterns: Record<string, unknown>): string => {
+  const maxId = Object.keys(patterns).reduce((max, id) => {
+    const n = Number(id);
+    return Number.isFinite(n) ? Math.max(max, n) : max;
+  }, 0);
+  return String(maxId + 1);
+};
+
+const normalizeSynthCell = (cell: unknown): SynthStep[] => {
+  if (!cell) {
+    return [];
+  }
+  if (Array.isArray(cell)) {
+    return cell.filter(
+      (n): n is SynthStep =>
+        typeof n === "object" &&
+        n !== null &&
+        typeof (n as SynthStep).pitch === "number" &&
+        typeof (n as SynthStep).length === "number" &&
+        typeof (n as SynthStep).velocity === "number"
+    );
+  }
+  if (
+    typeof cell === "object" &&
+    typeof (cell as SynthStep).pitch === "number" &&
+    typeof (cell as SynthStep).length === "number" &&
+    typeof (cell as SynthStep).velocity === "number"
+  ) {
+    return [cell as SynthStep];
+  }
+  return [];
+};
 
 export const aiProposePatch = (
   prompt: string,
@@ -71,22 +127,23 @@ export const aiProposePatch = (
   if (text.includes("variation") && synthIndex >= 0 && !locks?.arrangement) {
     const targetBar = Math.min(song.bars - 1, Math.max(8, scope.selectedBar ?? song.bars - 1));
     const synth = song.tracks[synthIndex];
-    const sourcePatternId = synth.lane[Math.max(0, targetBar - 1)] ?? "p0";
+    const sourcePatternId = synth.lane[Math.max(0, targetBar - 1)] ?? "1";
     const sourcePattern = synth.patterns[sourcePatternId];
 
     if (sourcePattern && sourcePattern.type === "synth") {
-      const newPatternId = `v${targetBar}`;
+      const newPatternId = nextPatternIdFromRecord(synth.patterns);
       const steps = sourcePattern.steps.map((step, idx) => {
-        if (!step) {
-          return null;
+        const notes = normalizeSynthCell(step);
+        if (notes.length === 0) {
+          return [];
         }
         if (idx === 6) {
-          return { ...step, pitch: step.pitch + 2 };
+          return notes.map((note) => ({ ...note, pitch: snapToWhiteKey(note.pitch + 2) }));
         }
         if (idx === 14) {
-          return { ...step, pitch: step.pitch - 3 };
+          return notes.map((note) => ({ ...note, pitch: snapToWhiteKey(note.pitch - 3) }));
         }
-        return step;
+        return notes;
       });
 
       candidates.push(

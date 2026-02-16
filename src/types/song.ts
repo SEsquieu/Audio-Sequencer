@@ -25,7 +25,7 @@ export interface DrumStep {
 
 export interface SynthPattern {
   type: "synth";
-  steps: Array<SynthStep | null>;
+  steps: SynthStep[][];
 }
 
 export interface DrumPattern {

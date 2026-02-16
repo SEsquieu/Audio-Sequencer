@@ -2,9 +2,9 @@ import { SongState } from "../types/song";
 
 const synthSteps = Array.from({ length: 16 }, (_, i) => {
   if (i % 4 === 0) {
-    return { pitch: 60 + (i % 8 === 0 ? 0 : 3), length: 1, velocity: 0.9 };
+    return [{ pitch: 60 + (i % 8 === 0 ? 0 : 4), length: 1, velocity: 0.9 }];
   }
-  return null;
+  return [];
 });
 
 const drumSteps = Array.from({ length: 16 }, (_, i) => ({
@@ -13,10 +13,13 @@ const drumSteps = Array.from({ length: 16 }, (_, i) => ({
   hat: i % 2 === 0 ? 0.6 : 0,
 }));
 
+const emptySynthSteps = Array.from({ length: 16 }, () => []);
+const emptyDrumSteps = Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
+
 export const createDefaultSong = (): SongState => ({
   tempo: 120,
   swing: 0,
-  bars: 16,
+  bars: 8,
   tracks: [
     {
       id: "t-synth",
@@ -33,12 +36,16 @@ export const createDefaultSong = (): SongState => ({
         lofiAmount: 0,
       },
       patterns: {
-        p0: {
+        "1": {
           type: "synth",
           steps: synthSteps,
         },
+        "2": {
+          type: "synth",
+          steps: emptySynthSteps,
+        },
       },
-      lane: Array.from({ length: 16 }, () => "p0"),
+      lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
     },
     {
       id: "t-drums",
@@ -55,12 +62,16 @@ export const createDefaultSong = (): SongState => ({
         lofiAmount: 0,
       },
       patterns: {
-        p0: {
+        "1": {
           type: "drums",
           steps: drumSteps,
         },
+        "2": {
+          type: "drums",
+          steps: emptyDrumSteps,
+        },
       },
-      lane: Array.from({ length: 16 }, () => "p0"),
+      lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
     },
   ],
 });

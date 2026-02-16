@@ -3,7 +3,6 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -33,46 +32,22 @@ interface SongContextValue {
   applySingleReplace: (path: string, value: unknown, label: string, author?: "user" | "ai") => void;
 }
 
-const STORAGE_KEY = "beepbox_strudel_ai_patch_state_v1";
-
 const SongContext = createContext<SongContextValue | undefined>(undefined);
 
 const patchId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
 const loadInitial = (): PersistedState => {
-  const fallback: PersistedState = {
+  return {
     song: createDefaultSong(),
     past: [],
     future: [],
   };
-
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    return fallback;
-  }
-
-  try {
-    return JSON.parse(raw) as PersistedState;
-  } catch {
-    return fallback;
-  }
 };
 
 export const SongProvider = ({ children }: PropsWithChildren) => {
   const [{ song, past, future }, setState] = useState<PersistedState>(() => loadInitial());
   const [previewSong, setPreviewSong] = useState<SongState | null>(null);
   const [auditionPatchId, setAuditionPatchId] = useState<string | null>(null);
-
-  useEffect(() => {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        song,
-        past,
-        future,
-      } satisfies PersistedState)
-    );
-  }, [song, past, future]);
 
   const commitPatch = useCallback((patch: PatchMeta) => {
     setState((prev) => {

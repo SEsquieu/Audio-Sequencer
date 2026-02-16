@@ -1,4 +1,4 @@
-import { SongState, Track } from "../types/song";
+import { SongState, SynthStep, Track } from "../types/song";
 
 const midiToFreq = (midi: number): number => 440 * 2 ** ((midi - 69) / 12);
 
@@ -6,6 +6,57 @@ interface TickInfo {
   bar: number;
   step: number;
 }
+
+const normalizeSynthCell = (cell: unknown): SynthStep[] => {
+  if (!cell) {
+    return [];
+  }
+  if (Array.isArray(cell)) {
+    return cell.filter(
+      (n): n is SynthStep =>
+        typeof n === "object" &&
+        n !== null &&
+        typeof (n as SynthStep).pitch === "number" &&
+        typeof (n as SynthStep).length === "number" &&
+        typeof (n as SynthStep).velocity === "number"
+    );
+  }
+  if (
+    typeof cell === "object" &&
+    typeof (cell as SynthStep).pitch === "number" &&
+    typeof (cell as SynthStep).length === "number" &&
+    typeof (cell as SynthStep).velocity === "number"
+  ) {
+    return [cell as SynthStep];
+  }
+  return [];
+};
+
+const patternHasContent = (pattern: SongState["tracks"][number]["patterns"][string]): boolean => {
+  if (pattern.type === "synth") {
+    return pattern.steps.some((cell) => normalizeSynthCell(cell).length > 0);
+  }
+  return pattern.steps.some((step) => step.kick > 0 || step.snare > 0 || step.hat > 0);
+};
+
+export const getEffectiveLoopBars = (song: SongState): number => {
+  let lastActiveBar = -1;
+
+  for (let bar = 0; bar < song.bars; bar += 1) {
+    for (const track of song.tracks) {
+      const patternId = track.lane[bar] ?? track.lane[0];
+      const pattern = track.patterns[patternId];
+      if (pattern && patternHasContent(pattern)) {
+        lastActiveBar = Math.max(lastActiveBar, bar);
+      }
+    }
+  }
+
+  if (lastActiveBar >= 0) {
+    return Math.max(1, lastActiveBar + 1);
+  }
+  return Math.max(1, song.bars);
+};
 
 export class AudioEngine {
   private context: AudioContext | null = null;
@@ -94,9 +145,10 @@ export class AudioEngine {
     this.nextStepTime += sixteenth * stepFactor;
 
     this.currentStep += 1;
+    const loopBars = getEffectiveLoopBars(song);
     if (this.currentStep >= 16) {
       this.currentStep = 0;
-      this.currentBar = (this.currentBar + 1) % song.bars;
+      this.currentBar = (this.currentBar + 1) % loopBars;
     }
   }
 
@@ -109,9 +161,9 @@ export class AudioEngine {
       }
 
       if (track.type === "synth" && pattern.type === "synth") {
-        const event = pattern.steps[step];
-        if (event) {
-          this.playSynthNote(track, event.pitch, event.velocity, event.length, when, song.tempo);
+        const notes = normalizeSynthCell(pattern.steps[step]);
+        for (const note of notes) {
+          this.playSynthNote(track, note.pitch, note.velocity, note.length, when, song.tempo);
         }
       }
 
