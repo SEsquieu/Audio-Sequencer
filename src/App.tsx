@@ -170,6 +170,8 @@ interface SynthDragState {
   endStep: number;
   pitch: number;
   moved: boolean;
+  startClientX: number;
+  cellWidth: number;
 }
 
 interface LoopRange {
@@ -622,17 +624,20 @@ function App() {
   };
 
   const onSynthPointerDown = (stepIndex: number, pitch: number, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0 || !track || track.type !== "synth") {
+    if ((event.pointerType === "mouse" && event.button !== 0) || !track || track.type !== "synth") {
       return;
     }
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     activeSynthPointerIdRef.current = event.pointerId;
+    const cellRect = event.currentTarget.getBoundingClientRect();
     setSynthDrag({
       startStep: stepIndex,
       endStep: stepIndex,
       pitch,
       moved: false,
+      startClientX: event.clientX,
+      cellWidth: Math.max(1, cellRect.width),
     });
   };
 
@@ -648,20 +653,12 @@ function App() {
     }
 
     event.preventDefault();
-    const el = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
-    const cell = el?.closest<HTMLButtonElement>("button[data-synth-cell='1']");
-    if (!cell) {
-      return;
-    }
-
-    const pitch = Number(cell.dataset.pitch);
-    const stepIndex = Number(cell.dataset.step);
-    if (!Number.isFinite(pitch) || !Number.isFinite(stepIndex)) {
-      return;
-    }
+    const deltaX = event.clientX - synthDrag.startClientX;
+    const stepDelta = Math.round(deltaX / synthDrag.cellWidth);
+    const stepIndex = Math.max(0, Math.min(15, synthDrag.startStep + stepDelta));
 
     setSynthDrag((prev) => {
-      if (!prev || prev.pitch !== pitch || prev.endStep === stepIndex) {
+      if (!prev || prev.endStep === stepIndex) {
         return prev;
       }
       return {
