@@ -49,6 +49,7 @@ export class AudioEngine {
   private lastWakeLateMs = 0;
   private diagnosticsUpdatedAtMs = 0;
   private liveEditPolicy: LiveEditPolicy = "nextStep";
+  private useContextClock = false;
   private readonly transport = new StepTransport();
   private readonly mixer = new MixerGraph();
   private readonly instrumentEngine = new InstrumentEngine(
@@ -62,15 +63,41 @@ export class AudioEngine {
     }
   );
 
-  async ensureContext() {
+  private async resumeContextWithTimeout(context: AudioContext, timeoutMs = 350): Promise<boolean> {
+    const resumePromise = context
+      .resume()
+      .then(() => true)
+      .catch(() => false);
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      window.setTimeout(() => resolve(false), timeoutMs);
+    });
+    return Promise.race([resumePromise, timeoutPromise]);
+  }
+
+  async ensureContext(): Promise<boolean> {
     if (!this.context) {
-      this.context = new AudioContext();
-      this.noiseBuffer = createNoiseBuffer(this.context);
-      this.mixer.init(this.context, this.masterVolume);
+      try {
+        this.context = new AudioContext();
+        this.noiseBuffer = createNoiseBuffer(this.context);
+        this.mixer.init(this.context, this.masterVolume);
+      } catch (error) {
+        console.warn("[audio] Unable to create AudioContext. Running in silent mode.", error);
+        this.context = null;
+        this.noiseBuffer = null;
+        return false;
+      }
     }
     if (this.context.state === "suspended") {
-      await this.context.resume();
+      const resumed = await this.resumeContextWithTimeout(this.context);
+      if (!resumed) {
+        console.warn("[audio] Unable to resume AudioContext promptly. Running in silent mode.");
+        return false;
+      }
     }
+    if (this.context.state !== "running") {
+      return false;
+    }
+    return true;
   }
 
   onTick(listener: (info: TickInfo) => void) {
@@ -122,8 +149,9 @@ export class AudioEngine {
   }
 
   async play(getSong: () => SongState, resetPosition = false) {
-    await this.ensureContext();
-    if (!this.context || this.isPlaying) {
+    const hasAudioContext = await this.ensureContext();
+    this.useContextClock = hasAudioContext && this.context !== null;
+    if (this.isPlaying) {
       return;
     }
 
@@ -137,8 +165,9 @@ export class AudioEngine {
       this.tickListener?.(this.transport.getPosition());
     }
 
-    this.transport.setNextStepTime(this.context.currentTime + 0.02);
-    this.recomputeSchedulingWindow(this.context.baseLatency || 0, 0);
+    const startTime = this.useContextClock && this.context ? this.context.currentTime : performance.now() / 1000;
+    this.transport.setNextStepTime(startTime + 0.02);
+    this.recomputeSchedulingWindow(this.useContextClock ? (this.context?.baseLatency || 0) : 0, 0);
     this.schedulerExpectedWakeMs = performance.now() + this.lookaheadMs;
     this.resetTimingDiagnostics();
     this.schedulerLoop();
@@ -155,16 +184,15 @@ export class AudioEngine {
     this.schedulerExpectedWakeMs = 0;
     this.lastWakeLateMs = 0;
     this.isPlaying = false;
+    this.useContextClock = false;
   }
 
   stop() {
     this.pause();
-    if (!this.context) {
-      return;
-    }
     this.instrumentEngine.stopAllVoices();
     this.transport.setPosition(this.transport.getLoopRange().start ?? 0, 0);
-    this.transport.setNextStepTime(this.context.currentTime + 0.02);
+    const clockTime = this.useContextClock && this.context ? this.context.currentTime : performance.now() / 1000;
+    this.transport.setNextStepTime(clockTime + 0.02);
     this.tickListener?.(this.transport.getPosition());
   }
 
@@ -185,7 +213,10 @@ export class AudioEngine {
     lengthSteps = 1,
     tempo = 120
   ) {
-    await this.ensureContext();
+    const hasAudioContext = await this.ensureContext();
+    if (!hasAudioContext) {
+      return;
+    }
     if (!this.context) {
       return;
     }
@@ -219,7 +250,10 @@ export class AudioEngine {
     if (track.type !== "drums") {
       return;
     }
-    await this.ensureContext();
+    const hasAudioContext = await this.ensureContext();
+    if (!hasAudioContext) {
+      return;
+    }
     if (!this.context) {
       return;
     }
@@ -244,23 +278,28 @@ export class AudioEngine {
   }
 
   private scheduler() {
-    if (!this.context || !this.getSong) {
+    if (!this.getSong) {
       return;
     }
+    const currentTime = this.useContextClock && this.context ? this.context.currentTime : performance.now() / 1000;
 
     const windowSong = this.liveEditPolicy === "schedulerWindow" ? this.getSong() : null;
-    while (this.transport.getNextStepTime() < this.context.currentTime + this.scheduleAheadTime) {
+    while (this.transport.getNextStepTime() < currentTime + this.scheduleAheadTime) {
       const song = windowSong ?? this.getSong();
-      this.mixer.pruneTrackBuses(song);
+      if (this.useContextClock && this.context) {
+        this.mixer.pruneTrackBuses(song);
+      }
       const position = this.transport.getPosition();
       const stepTime = this.transport.getNextStepTime();
       this.captureStepIntervalDiagnostics(song, stepTime);
-      scheduleSongStep(
-        song,
-        { bar: position.bar, step: position.step, when: stepTime },
-        this.mutedTrackIds,
-        this.instrumentEngine
-      );
+      if (this.useContextClock && this.context) {
+        scheduleSongStep(
+          song,
+          { bar: position.bar, step: position.step, when: stepTime },
+          this.mutedTrackIds,
+          this.instrumentEngine
+        );
+      }
       this.tickListener?.(position);
       this.scheduledSteps += 1;
       this.diagnosticsUpdatedAtMs = performance.now();
@@ -272,15 +311,13 @@ export class AudioEngine {
     if (!this.isPlaying) {
       return;
     }
-    if (this.context) {
-      const nowMs = performance.now();
-      const lateMs = this.schedulerExpectedWakeMs > 0 ? Math.max(0, nowMs - this.schedulerExpectedWakeMs) : 0;
-      this.lastWakeLateMs = lateMs;
-      this.schedulerWakeLateMaxMs = Math.max(this.schedulerWakeLateMaxMs, lateMs);
-      this.recomputeSchedulingWindow(this.context.baseLatency || 0, lateMs);
-      this.schedulerExpectedWakeMs = nowMs + this.lookaheadMs;
-      this.diagnosticsUpdatedAtMs = nowMs;
-    }
+    const nowMs = performance.now();
+    const lateMs = this.schedulerExpectedWakeMs > 0 ? Math.max(0, nowMs - this.schedulerExpectedWakeMs) : 0;
+    this.lastWakeLateMs = lateMs;
+    this.schedulerWakeLateMaxMs = Math.max(this.schedulerWakeLateMaxMs, lateMs);
+    this.recomputeSchedulingWindow(this.useContextClock ? (this.context?.baseLatency || 0) : 0, lateMs);
+    this.schedulerExpectedWakeMs = nowMs + this.lookaheadMs;
+    this.diagnosticsUpdatedAtMs = nowMs;
     this.scheduler();
     this.timerId = window.setTimeout(this.schedulerLoop, this.lookaheadMs);
   };
