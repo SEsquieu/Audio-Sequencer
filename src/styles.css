@@ -465,6 +465,55 @@ select {
   padding-bottom: 0.1rem;
 }
 
+.timeline-radial-shell {
+  display: flex;
+  justify-content: center;
+  margin: 0 auto 0.45rem;
+  padding: 0 0.25rem;
+}
+
+.timeline-radial-scrubber {
+  position: relative;
+  width: min(22rem, 100%);
+  height: 0.62rem;
+  border-radius: 999px;
+  border: 1px solid rgba(71, 85, 105, 0.65);
+  background:
+    repeating-linear-gradient(
+      90deg,
+      rgba(15, 23, 42, 0.75) 0,
+      rgba(15, 23, 42, 0.75) 1.6rem,
+      rgba(30, 41, 59, 0.66) 1.6rem,
+      rgba(30, 41, 59, 0.66) 3.2rem
+    );
+  box-shadow: inset 0 0 0 1px rgba(2, 6, 23, 0.28);
+  cursor: grab;
+  touch-action: none;
+  overflow: hidden;
+}
+
+.timeline-radial-window {
+  position: absolute;
+  top: 0.06rem;
+  bottom: 0.06rem;
+  left: var(--timeline-window-left, 0%);
+  width: var(--timeline-window-width, 100%);
+  border-radius: 999px;
+  border: 1px solid rgba(34, 211, 238, 0.78);
+  background: rgba(34, 211, 238, 0.16);
+  box-shadow:
+    0 0 0 1px rgba(2, 6, 23, 0.18),
+    0 0 8px rgba(34, 211, 238, 0.18);
+  pointer-events: none;
+}
+
+@media (max-width: 899px) {
+  .timeline-radial-scrubber {
+    width: min(30rem, 100%);
+    height: 0.78rem;
+  }
+}
+
 .timeline-mobile-strip {
   display: none;
 }

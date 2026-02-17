@@ -237,6 +237,11 @@ interface DrumWalkState {
   lastLane: "kick" | "snare" | "hat" | null;
 }
 
+interface TimelineScrollMetrics {
+  max: number;
+  viewport: number;
+}
+
 function App() {
   const {
     song,
@@ -311,6 +316,12 @@ function App() {
   const timelineRowRefs = useRef<Array<HTMLDivElement | null>>([]);
   const syncingTimelineScrollRef = useRef(false);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
+  const [timelineScrollMetrics, setTimelineScrollMetrics] = useState<TimelineScrollMetrics>({
+    max: 0,
+    viewport: 1,
+  });
+  const timelineScrubberRef = useRef<HTMLDivElement | null>(null);
+  const timelineScrubPointerIdRef = useRef<number | null>(null);
   const isLoopTouchDragActive = Boolean(loopDrag && loopDrag.pointerType !== "mouse");
 
   useEffect(() => {
@@ -536,6 +547,19 @@ function App() {
     setIsPlaying(true);
   }, []);
 
+  const updateTimelineScrollMetrics = useCallback((el: HTMLDivElement | null) => {
+    if (!el) {
+      return;
+    }
+    const max = Math.max(0, el.scrollWidth - el.clientWidth);
+    setTimelineScrollMetrics((prev) => {
+      if (Math.abs(prev.max - max) < 0.5 && Math.abs(prev.viewport - el.clientWidth) < 0.5) {
+        return prev;
+      }
+      return { max, viewport: Math.max(1, el.clientWidth) };
+    });
+  }, []);
+
   const syncTimelineScroll = useCallback((sourceIndex: number, scrollLeft: number) => {
     if (syncingTimelineScrollRef.current) {
       return;
@@ -563,6 +587,74 @@ function App() {
       }
     });
   }, [song.tracks.length, timelineScrollLeft]);
+
+  useEffect(() => {
+    const measure = () => updateTimelineScrollMetrics(timelineRowRefs.current[0] ?? null);
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [song.bars, song.tracks.length, updateTimelineScrollMetrics]);
+
+  const timelineViewportRatio =
+    timelineScrollMetrics.max <= 0
+      ? 1
+      : Math.max(
+          0.1,
+          Math.min(1, timelineScrollMetrics.viewport / (timelineScrollMetrics.viewport + timelineScrollMetrics.max))
+        );
+  const timelineWindowWidthPercent = timelineViewportRatio * 100;
+  const timelineWindowTravelPercent = Math.max(0, 100 - timelineWindowWidthPercent);
+  const timelineWindowLeftPercent =
+    timelineScrollMetrics.max <= 0
+      ? 0
+      : (Math.max(0, Math.min(timelineScrollMetrics.max, timelineScrollLeft)) / timelineScrollMetrics.max) *
+        timelineWindowTravelPercent;
+
+  const applyTimelineScrollFromClientX = useCallback(
+    (clientX: number, scrubberEl: HTMLDivElement) => {
+      if (timelineScrollMetrics.max <= 0) {
+        return;
+      }
+      const rect = scrubberEl.getBoundingClientRect();
+      if (rect.width <= 0) {
+        return;
+      }
+      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+      const nextScroll = ratio * timelineScrollMetrics.max;
+      syncTimelineScroll(-1, nextScroll);
+    },
+    [syncTimelineScroll, timelineScrollMetrics.max]
+  );
+
+  const onTimelineScrubberPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (timelineScrollMetrics.max <= 0) {
+      return;
+    }
+    event.preventDefault();
+    timelineScrubPointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    applyTimelineScrollFromClientX(event.clientX, event.currentTarget);
+  };
+
+  const onTimelineScrubberPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (timelineScrubPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+    if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) {
+      return;
+    }
+    applyTimelineScrollFromClientX(event.clientX, event.currentTarget);
+  };
+
+  const onTimelineScrubberPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (timelineScrubPointerIdRef.current !== event.pointerId) {
+      return;
+    }
+    timelineScrubPointerIdRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
 
   const onPause = useCallback(() => {
     if (!engineRef.current || !engineRef.current.playing) {
@@ -2104,6 +2196,32 @@ function App() {
           </>
         )}
 
+        <div className="timeline-radial-shell">
+          <div
+            ref={timelineScrubberRef}
+            className="timeline-radial-scrubber"
+            onPointerDown={onTimelineScrubberPointerDown}
+            onPointerMove={onTimelineScrubberPointerMove}
+            onPointerUp={onTimelineScrubberPointerEnd}
+            onPointerCancel={onTimelineScrubberPointerEnd}
+            role="slider"
+            aria-label="Timeline scroll"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(timelineScrollMetrics.max)}
+            aria-valuenow={Math.round(timelineScrollLeft)}
+          >
+            <div
+              className="timeline-radial-window"
+              style={
+                {
+                  "--timeline-window-left": `${timelineWindowLeftPercent}%`,
+                  "--timeline-window-width": `${timelineWindowWidthPercent}%`,
+                } as CSSProperties
+              }
+            />
+          </div>
+        </div>
+
         <div className="timeline-rows-wrap">
           <div
             className="timeline-global-sweep"
@@ -2131,8 +2249,14 @@ function App() {
                 className="bar-grid"
                 ref={(el) => {
                   timelineRowRefs.current[trackIndex] = el;
+                  if (trackIndex === 0) {
+                    updateTimelineScrollMetrics(el);
+                  }
                 }}
-                onScroll={(event) => syncTimelineScroll(trackIndex, event.currentTarget.scrollLeft)}
+                onScroll={(event) => {
+                  updateTimelineScrollMetrics(event.currentTarget);
+                  syncTimelineScroll(trackIndex, event.currentTarget.scrollLeft);
+                }}
               >
                 <div
                   className="bar-grid-inner"
