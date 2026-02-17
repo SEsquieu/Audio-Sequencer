@@ -697,33 +697,45 @@ select {
   border-radius: 0.42rem;
   background: #111827;
   display: grid;
-  grid-template-rows: 1fr auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   justify-items: center;
-  align-items: stretch;
-  gap: 0.3rem;
-  padding: 0.3rem 0.24rem;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.24rem;
   user-select: none;
   touch-action: none;
   cursor: ns-resize;
 }
 
-.octave-scrubber-track {
-  width: 0.5rem;
-  border-radius: 999px;
-  background: linear-gradient(180deg, #0ea5e9 0%, #0369a1 100%);
+.octave-scrubber-range {
+  width: 100%;
+  height: 100%;
   position: relative;
+  border-radius: 0.28rem;
+  border: 1px solid rgba(14, 165, 233, 0.55);
+  background:
+    repeating-linear-gradient(
+      to top,
+      rgba(30, 41, 59, 0.58) 0% 16.66%,
+      rgba(51, 65, 85, 0.58) 16.66% 33.32%
+    ),
+    linear-gradient(180deg, rgba(2, 6, 23, 0.25), rgba(2, 6, 23, 0.15));
+  box-shadow: inset 0 0 0 1px rgba(2, 6, 23, 0.35);
 }
 
-.octave-scrubber-thumb {
+.octave-scrubber-window {
   position: absolute;
-  left: 50%;
-  width: 0.95rem;
-  height: 0.48rem;
-  border-radius: 999px;
-  transform: translate(-50%, -50%);
-  background: #f8fafc;
-  border: 1px solid #0ea5e9;
-  box-shadow: 0 0 0 1px rgba(2, 6, 23, 0.35);
+  left: 0.12rem;
+  right: 0.12rem;
+  top: var(--octave-window-top, 0%);
+  height: var(--octave-window-height, 14.28%);
+  border-radius: 0.18rem;
+  border: 1px solid rgba(34, 211, 238, 0.95);
+  background: rgba(34, 211, 238, 0.26);
+  box-shadow:
+    0 0 0 1px rgba(2, 6, 23, 0.25),
+    0 0 10px rgba(34, 211, 238, 0.3);
+  pointer-events: none;
 }
 
 .octave-scrubber-label {

@@ -1120,7 +1120,7 @@ function App() {
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
     }
-    const deltaY = drag.startY - event.clientY;
+    const deltaY = event.clientY - drag.startY;
     const stepDelta = Math.trunc(deltaY / OCTAVE_SCRUB_STEP_PX);
     if (stepDelta === drag.lastStepDelta) {
       const remainder = deltaY - stepDelta * OCTAVE_SCRUB_STEP_PX;
@@ -1349,13 +1349,18 @@ function App() {
                           octaveBase + 11
                         )}`}
                       >
-                        <div className="octave-scrubber-track">
-                          <div
-                            className="octave-scrubber-thumb"
-                            style={{
-                              top: `${((MAX_OCTAVE_BASE - octaveBase) / (MAX_OCTAVE_BASE - MIN_OCTAVE_BASE)) * 100}%`,
-                            }}
-                          />
+                        <div
+                          className="octave-scrubber-range"
+                          style={
+                            {
+                              "--octave-window-top": `${
+                                ((MAX_OCTAVE_BASE - octaveBase) / (MAX_OCTAVE_BASE - MIN_OCTAVE_BASE + 12)) * 100
+                              }%`,
+                              "--octave-window-height": `${(12 / (MAX_OCTAVE_BASE - MIN_OCTAVE_BASE + 12)) * 100}%`,
+                            } as CSSProperties
+                          }
+                        >
+                          <div className="octave-scrubber-window" />
                         </div>
                         <div className="octave-scrubber-label">
                           {toNoteWithOctave(octaveBase)}-{toNoteWithOctave(octaveBase + 11)}
