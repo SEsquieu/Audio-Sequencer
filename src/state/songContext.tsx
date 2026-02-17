@@ -3,6 +3,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
 } from "react";
@@ -14,6 +15,11 @@ interface PersistedState {
   song: SongState;
   past: HistoryEntry[];
   future: HistoryEntry[];
+}
+
+interface PersistedSongSnapshot {
+  version: 1;
+  song: SongState;
 }
 
 interface SongContextValue {
@@ -35,8 +41,57 @@ interface SongContextValue {
 const SongContext = createContext<SongContextValue | undefined>(undefined);
 
 const patchId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const STORAGE_KEY = "audio-sequencer:autosave:v1";
+
+const isSongStateLike = (value: unknown): value is SongState => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<SongState>;
+  if (
+    typeof candidate.tempo !== "number" ||
+    typeof candidate.swing !== "number" ||
+    typeof candidate.bars !== "number" ||
+    !Array.isArray(candidate.tracks)
+  ) {
+    return false;
+  }
+  return candidate.tracks.every((track) => {
+    if (!track || typeof track !== "object") {
+      return false;
+    }
+    const t = track as Partial<SongState["tracks"][number]>;
+    return (
+      typeof t.id === "string" &&
+      typeof t.name === "string" &&
+      (t.type === "synth" || t.type === "drums") &&
+      !!t.instrument &&
+      typeof t.instrument === "object" &&
+      !!t.patterns &&
+      typeof t.patterns === "object" &&
+      Array.isArray(t.lane)
+    );
+  });
+};
 
 const loadInitial = (): PersistedState => {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<PersistedSongSnapshot>;
+        if (parsed.version === 1 && isSongStateLike(parsed.song)) {
+          return {
+            song: parsed.song,
+            past: [],
+            future: [],
+          };
+        }
+      }
+    } catch (error) {
+      console.warn("[song] Failed to load autosave snapshot", error);
+    }
+  }
   return {
     song: createDefaultSong(),
     past: [],
@@ -48,6 +103,21 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
   const [{ song, past, future }, setState] = useState<PersistedState>(() => loadInitial());
   const [previewSong, setPreviewSong] = useState<SongState | null>(null);
   const [auditionPatchId, setAuditionPatchId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const snapshot: PersistedSongSnapshot = {
+        version: 1,
+        song,
+      };
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    } catch (error) {
+      console.warn("[song] Failed to persist autosave snapshot", error);
+    }
+  }, [song]);
 
   const commitPatch = useCallback((patch: PatchMeta) => {
     setState((prev) => {
