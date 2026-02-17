@@ -443,6 +443,20 @@ select {
   padding-bottom: 0.1rem;
 }
 
+.timeline-mobile-strip {
+  display: none;
+}
+
+.timeline-toggle-button {
+  border: 1px solid #475569;
+  background: #111827;
+  color: #e2e8f0;
+  border-radius: 0.4rem;
+  padding: 0.2rem 0.45rem;
+  min-height: 1.6rem;
+  white-space: nowrap;
+}
+
 .timeline-controls-left,
 .timeline-controls-center,
 .timeline-controls-right {
@@ -1051,14 +1065,26 @@ select {
 
 @media (max-width: 899px) {
   .topbar {
-    padding: 0.6rem;
-    gap: 0.42rem;
+    padding: 0.45rem 0.5rem;
+    gap: 0.28rem;
+  }
+
+  .topbar h1 {
+    display: none;
   }
 
   .top-controls {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: thin;
+    gap: 0.28rem;
+  }
+
+  .top-controls button {
+    min-height: 1.6rem;
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.4rem;
+    font-size: 0.75rem;
   }
 
   .ai-dock-button {
@@ -1074,12 +1100,12 @@ select {
 
   .status-row {
     flex-wrap: wrap;
-    gap: 0.45rem 0.7rem;
-    font-size: 0.8rem;
+    gap: 0.3rem 0.55rem;
+    font-size: 0.74rem;
   }
 
   .status-row .master-volume {
-    min-width: 11.5rem;
+    min-width: 9.5rem;
   }
 
   .workspace {
@@ -1123,14 +1149,31 @@ select {
   }
 
   .timeline-dock {
-    padding: 0.5rem 0.55rem 0.55rem;
-    height: clamp(8rem, 34dvh, 11rem);
-    max-height: 36dvh;
+    padding: 0.42rem 0.5rem 0.48rem;
+    height: clamp(6.8rem, 29dvh, 9.4rem);
+    max-height: 31dvh;
+  }
+
+  .timeline-mobile-strip {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.35rem;
+    margin-bottom: 0.35rem;
+    font-size: 0.72rem;
+    color: #cbd5e1;
+  }
+
+  .timeline-mobile-strip span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .timeline-controls {
-    gap: 0.3rem;
-    margin-bottom: 0.45rem;
+    gap: 0.24rem;
+    margin-bottom: 0.35rem;
   }
 
   .timeline-controls select,

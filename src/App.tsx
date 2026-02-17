@@ -241,6 +241,7 @@ function App() {
   const [prompt, setPrompt] = useState("");
   const [candidates, setCandidates] = useState<PatchMeta[]>([]);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
+  const [mobileTimelineControlsOpen, setMobileTimelineControlsOpen] = useState(false);
   const [isMobileTimelineLayout, setIsMobileTimelineLayout] = useState<boolean>(() => {
     if (typeof window === "undefined") {
       return false;
@@ -437,6 +438,12 @@ function App() {
       media.removeEventListener("change", handleChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (!isMobileTimelineLayout) {
+      setMobileTimelineControlsOpen(false);
+    }
+  }, [isMobileTimelineLayout]);
 
   useEffect(() => {
     return () => {
@@ -1592,56 +1599,75 @@ function App() {
 
       <section className="timeline-dock" aria-label="Timeline">
         {track && (
-          <div className="timeline-controls">
-            <div className="timeline-controls-left">
-              <span>
-                Bar: <strong>{selectedBar + 1}</strong>
-              </span>
-              <label>
-                Pattern
-                <select value={patternSelectValue} onChange={(e) => assignPatternToBar(e.target.value)}>
-                  <option value="__unassigned" disabled>
-                    Unassigned
-                  </option>
-                  {trackPatternIds.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button type="button" onClick={createPatternForBar}>
-                New Pattern
-              </button>
-              <button type="button" onClick={() => addBars(4)}>
-                Add 4 Bars
-              </button>
-              {loopRange !== null && (
-                <button type="button" onClick={() => setLoopRange(null)}>
-                  Clear Loop (Bars {loopRange.start + 1}-{loopRange.end + 1})
+          <>
+            {isMobileTimelineLayout && (
+              <div className="timeline-mobile-strip">
+                <span>
+                  Bar <strong>{selectedBar + 1}</strong> • Pattern <strong>{patternSelectValue}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="timeline-toggle-button"
+                  onClick={() => setMobileTimelineControlsOpen((prev) => !prev)}
+                  aria-expanded={mobileTimelineControlsOpen}
+                >
+                  {mobileTimelineControlsOpen ? "Hide Controls" : "Show Controls"}
                 </button>
-              )}
-            </div>
-            <div className="timeline-controls-center">
-              <button
-                type="button"
-                className={lockToActive ? "lock-active-button on" : "lock-active-button"}
-                onClick={() => setLockToActive((prev) => !prev)}
-                aria-pressed={lockToActive}
-                title="Lock editor to currently playing bar"
-              >
-                {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
-              </button>
-            </div>
-            <div className="timeline-controls-right">
-              <button type="button" onClick={() => addTrack("synth")}>
-                Add Synth Track
-              </button>
-              <button type="button" onClick={() => addTrack("drums")}>
-                Add Drums Track
-              </button>
-            </div>
-          </div>
+              </div>
+            )}
+            {(!isMobileTimelineLayout || mobileTimelineControlsOpen) && (
+              <div className="timeline-controls">
+                <div className="timeline-controls-left">
+                  <span>
+                    Bar: <strong>{selectedBar + 1}</strong>
+                  </span>
+                  <label>
+                    Pattern
+                    <select value={patternSelectValue} onChange={(e) => assignPatternToBar(e.target.value)}>
+                      <option value="__unassigned" disabled>
+                        Unassigned
+                      </option>
+                      {trackPatternIds.map((id) => (
+                        <option key={id} value={id}>
+                          {id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" onClick={createPatternForBar}>
+                    New Pattern
+                  </button>
+                  <button type="button" onClick={() => addBars(4)}>
+                    Add 4 Bars
+                  </button>
+                  {loopRange !== null && (
+                    <button type="button" onClick={() => setLoopRange(null)}>
+                      Clear Loop (Bars {loopRange.start + 1}-{loopRange.end + 1})
+                    </button>
+                  )}
+                </div>
+                <div className="timeline-controls-center">
+                  <button
+                    type="button"
+                    className={lockToActive ? "lock-active-button on" : "lock-active-button"}
+                    onClick={() => setLockToActive((prev) => !prev)}
+                    aria-pressed={lockToActive}
+                    title="Lock editor to currently playing bar"
+                  >
+                    {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
+                  </button>
+                </div>
+                <div className="timeline-controls-right">
+                  <button type="button" onClick={() => addTrack("synth")}>
+                    Add Synth Track
+                  </button>
+                  <button type="button" onClick={() => addTrack("drums")}>
+                    Add Drums Track
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
         )}
 
         <div className="timeline-rows-wrap">
