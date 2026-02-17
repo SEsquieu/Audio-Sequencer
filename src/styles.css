@@ -771,6 +771,10 @@ select {
   gap: 0;
 }
 
+.grid-row.synth-row .step-cell {
+  min-height: 1.13rem;
+}
+
 .grid-row.synth-row .row-label {
   padding-right: 0.2rem;
 }
@@ -1156,6 +1160,10 @@ select {
   .grid-row {
     grid-template-columns: 2.25rem repeat(16, minmax(0, 1fr));
     gap: 0.14rem;
+  }
+
+  .grid-row.synth-row .step-cell {
+    min-height: 1rem;
   }
 
   .row-label {
