@@ -210,6 +210,11 @@ interface LoopDragState {
   anchor: number;
   moved: boolean;
   pointerId: number;
+  pointerType: string;
+  trackIndex: number;
+  mode: "anchor" | "extendStart" | "extendEnd";
+  fixedStart: number;
+  fixedEnd: number;
 }
 
 interface OctaveScrubState {
@@ -1314,16 +1319,33 @@ function App() {
     setOctaveTransition(null);
   };
 
-  const onTimelineBarPointerDown = (bar: number, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (event.button !== 0 || !loopRange) {
+  const onTimelineBarPointerDown = (trackIndex: number, bar: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if ((event.pointerType === "mouse" && event.button !== 0) || !loopRange) {
       return;
     }
     if (bar < loopRange.start || bar > loopRange.end) {
       return;
     }
+    const mode: LoopDragState["mode"] =
+      loopRange.start === loopRange.end
+        ? "anchor"
+        : bar === loopRange.start
+          ? "extendStart"
+          : bar === loopRange.end
+            ? "extendEnd"
+            : "anchor";
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
-    setLoopDrag({ anchor: bar, moved: false, pointerId: event.pointerId });
+    setLoopDrag({
+      anchor: bar,
+      moved: false,
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      trackIndex,
+      mode,
+      fixedStart: loopRange.start,
+      fixedEnd: loopRange.end,
+    });
   };
 
   const extendLoopRangeToBar = useCallback((bar: number) => {
@@ -1331,15 +1353,43 @@ function App() {
       if (!prev) {
         return prev;
       }
-      const nextStart = Math.min(prev.anchor, bar);
-      const nextEnd = Math.max(prev.anchor, bar);
+      let nextStart = prev.fixedStart;
+      let nextEnd = prev.fixedEnd;
+      if (prev.mode === "extendStart") {
+        nextStart = Math.max(0, Math.min(bar, prev.fixedEnd));
+      } else if (prev.mode === "extendEnd") {
+        nextEnd = Math.min(song.bars - 1, Math.max(bar, prev.fixedStart));
+      } else {
+        nextStart = Math.min(prev.anchor, bar);
+        nextEnd = Math.max(prev.anchor, bar);
+      }
       setLoopRange({ start: nextStart, end: nextEnd });
       return {
         ...prev,
         moved: prev.moved || bar !== prev.anchor,
       };
     });
-  }, []);
+  }, [song.bars]);
+
+  const getBarIndexFromClientX = useCallback(
+    (clientX: number, trackIndex: number) => {
+      const rowEl = timelineRowRefs.current[trackIndex];
+      if (!rowEl) {
+        return null;
+      }
+      const remPx = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const cellStridePx = (TIMELINE_BAR_WIDTH_REM + TIMELINE_BAR_GAP_REM) * remPx;
+      const innerPadPx = TIMELINE_BAR_INNER_PAD_REM * remPx;
+      const rect = rowEl.getBoundingClientRect();
+      const localX = clientX - rect.left + rowEl.scrollLeft - innerPadPx;
+      if (!Number.isFinite(localX)) {
+        return null;
+      }
+      const raw = Math.floor(localX / cellStridePx);
+      return Math.max(0, Math.min(song.bars - 1, raw));
+    },
+    [song.bars]
+  );
 
   const onTimelineBarPointerEnter = (bar: number, event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!loopDrag || event.pointerId !== loopDrag.pointerId) {
@@ -1359,16 +1409,14 @@ function App() {
       if (event.pointerId !== loopDrag.pointerId) {
         return;
       }
-      if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) {
+      if (loopDrag.pointerType === "mouse" && (event.buttons & 1) !== 1) {
         return;
       }
-      const target = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
-      const barEl = target?.closest("[data-bar-index]") as HTMLElement | null;
-      if (!barEl) {
-        return;
+      if (loopDrag.pointerType !== "mouse") {
+        event.preventDefault();
       }
-      const bar = Number(barEl.dataset.barIndex);
-      if (!Number.isFinite(bar)) {
+      const bar = getBarIndexFromClientX(event.clientX, loopDrag.trackIndex);
+      if (bar === null) {
         return;
       }
       extendLoopRangeToBar(bar);
@@ -1380,7 +1428,7 @@ function App() {
       }
       setLoopDrag(null);
     };
-    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
     window.addEventListener("pointerup", finishDrag);
     window.addEventListener("pointercancel", finishDrag);
     return () => {
@@ -1388,7 +1436,7 @@ function App() {
       window.removeEventListener("pointerup", finishDrag);
       window.removeEventListener("pointercancel", finishDrag);
     };
-  }, [extendLoopRangeToBar, loopDrag]);
+  }, [extendLoopRangeToBar, getBarIndexFromClientX, loopDrag]);
 
   const applyOctaveBase = useCallback(
     (target: number) => {
@@ -2128,7 +2176,7 @@ function App() {
                           : { start: bar, end: bar }
                       );
                     }}
-                    onPointerDown={(event) => onTimelineBarPointerDown(bar, event)}
+                    onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
                     onPointerEnter={(event) => onTimelineBarPointerEnter(bar, event)}
                     data-bar-index={bar}
                   >
