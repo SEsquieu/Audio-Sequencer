@@ -18,8 +18,13 @@ export interface EngineTimingDiagnostics {
   observedStepIntervalMs: number;
   observedStepIntervalErrorMs: number;
   observedStepIntervalErrorMaxMs: number;
+  liveEditPolicy: LiveEditPolicy;
+  synthVoiceSteals: number;
+  synthVoiceStealsByTrack: Record<string, number>;
   lastUpdatedAtMs: number;
 }
+
+export type LiveEditPolicy = "nextStep" | "schedulerWindow";
 
 export { getEffectiveLoopBars } from "./songModel";
 
@@ -43,6 +48,7 @@ export class AudioEngine {
   private observedStepIntervalErrorMaxMs = 0;
   private lastWakeLateMs = 0;
   private diagnosticsUpdatedAtMs = 0;
+  private liveEditPolicy: LiveEditPolicy = "nextStep";
   private readonly transport = new StepTransport();
   private readonly mixer = new MixerGraph();
   private readonly instrumentEngine = new InstrumentEngine(
@@ -76,6 +82,7 @@ export class AudioEngine {
   }
 
   getTimingDiagnostics(): EngineTimingDiagnostics {
+    const voiceDiagnostics = this.instrumentEngine.getDiagnostics();
     return {
       schedulerWakeLateMs: this.lastWakeLateMs,
       schedulerWakeLateMaxMs: this.schedulerWakeLateMaxMs,
@@ -85,8 +92,15 @@ export class AudioEngine {
       observedStepIntervalMs: this.observedStepIntervalMs,
       observedStepIntervalErrorMs: this.observedStepIntervalErrorMs,
       observedStepIntervalErrorMaxMs: this.observedStepIntervalErrorMaxMs,
+      liveEditPolicy: this.liveEditPolicy,
+      synthVoiceSteals: voiceDiagnostics.synthVoiceSteals,
+      synthVoiceStealsByTrack: voiceDiagnostics.synthVoiceStealsByTrack,
       lastUpdatedAtMs: this.diagnosticsUpdatedAtMs,
     };
+  }
+
+  setLiveEditPolicy(policy: LiveEditPolicy) {
+    this.liveEditPolicy = policy;
   }
 
   setLoopRange(startBar: number | null, endBar: number | null = null) {
@@ -169,8 +183,9 @@ export class AudioEngine {
       return;
     }
 
+    const windowSong = this.liveEditPolicy === "schedulerWindow" ? this.getSong() : null;
     while (this.transport.getNextStepTime() < this.context.currentTime + this.scheduleAheadTime) {
-      const song = this.getSong();
+      const song = windowSong ?? this.getSong();
       this.mixer.pruneTrackBuses(song);
       const position = this.transport.getPosition();
       const stepTime = this.transport.getNextStepTime();
@@ -221,6 +236,7 @@ export class AudioEngine {
     this.observedStepIntervalErrorMs = 0;
     this.observedStepIntervalErrorMaxMs = 0;
     this.lastWakeLateMs = 0;
+    this.instrumentEngine.resetDiagnostics();
     this.diagnosticsUpdatedAtMs = performance.now();
   }
 

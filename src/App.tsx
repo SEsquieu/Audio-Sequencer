@@ -268,6 +268,7 @@ function App() {
       }
       const msg = [
         "[audio-timing]",
+        `policy=${diagnostics.liveEditPolicy}`,
         `steps=${diagnostics.scheduledSteps}`,
         `lookaheadMs=${diagnostics.lookaheadMs.toFixed(1)}`,
         `aheadMs=${diagnostics.scheduleAheadTimeMs.toFixed(1)}`,
@@ -275,6 +276,7 @@ function App() {
         `wakeLateMaxMs=${diagnostics.schedulerWakeLateMaxMs.toFixed(2)}`,
         `stepErrMs=${diagnostics.observedStepIntervalErrorMs.toFixed(3)}`,
         `stepErrMaxMs=${diagnostics.observedStepIntervalErrorMaxMs.toFixed(3)}`,
+        `voiceSteals=${diagnostics.synthVoiceSteals}`,
       ].join(" ");
       console.info(msg);
     }, 2000);

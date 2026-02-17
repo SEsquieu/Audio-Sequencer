@@ -12,6 +12,13 @@
 body {
   margin: 0;
   background: #020617;
+  overflow: hidden;
+}
+
+html,
+body,
+#root {
+  height: 100%;
 }
 
 button,
@@ -24,9 +31,11 @@ select {
 }
 
 .app-shell {
-  min-height: 100dvh;
+  height: 100dvh;
+  max-height: 100dvh;
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  overflow: hidden;
 }
 
 .topbar {
@@ -113,8 +122,9 @@ select {
 .main-view {
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: auto;
-  padding: 0.75rem;
+  padding: 0.65rem;
 }
 
 .sound-column {
@@ -385,8 +395,10 @@ select {
   padding: 0.55rem 0.75rem 0.65rem;
   border-top: 1px solid #334155;
   background: rgba(15, 23, 42, 0.92);
-  max-height: 34dvh;
+  height: clamp(8.5rem, 30dvh, 12rem);
+  max-height: 32dvh;
   overflow: auto;
+  min-height: 0;
 }
 
 .timeline-controls {
@@ -560,7 +572,7 @@ select {
 
 .step-grid {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
 .step-grid-editor {
@@ -588,7 +600,7 @@ select {
 
 .octave-shell {
   display: grid;
-  gap: 0.35rem;
+  gap: 0.25rem;
 }
 
 .octave-shift {
@@ -597,8 +609,9 @@ select {
   background: #111827;
   color: #e2e8f0;
   border-radius: 0.5rem;
-  min-height: 2.2rem;
+  min-height: 1.9rem;
   font-weight: 600;
+  font-size: 0.78rem;
 }
 
 .octave-shift:disabled {
@@ -650,7 +663,7 @@ select {
 .grid-row {
   display: grid;
   grid-template-columns: 2.8rem repeat(16, minmax(0, 1fr));
-  gap: 0.2rem;
+  gap: 0.16rem;
   align-items: center;
 }
 
@@ -663,15 +676,15 @@ select {
 }
 
 .row-label {
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   text-transform: none;
   font-weight: 600;
 }
 
 .step-cell {
-  min-height: 2rem;
+  min-height: 1.62rem;
   border: 1px solid #475569;
-  border-radius: 0.3rem;
+  border-radius: 0.25rem;
   background: #111827;
   color: #e2e8f0;
 }
@@ -905,6 +918,94 @@ select {
   color: #e2e8f0;
   border-radius: 0.45rem;
   padding: 0.3rem 0.6rem;
+}
+
+@media (max-width: 899px) {
+  .topbar {
+    padding: 0.6rem;
+    gap: 0.42rem;
+  }
+
+  .top-controls {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
+  .status-row {
+    flex-wrap: wrap;
+    gap: 0.45rem 0.7rem;
+    font-size: 0.8rem;
+  }
+
+  .status-row .master-volume {
+    min-width: 11.5rem;
+  }
+
+  .workspace {
+    gap: 0.5rem;
+  }
+
+  .main-view {
+    padding: 0.5rem;
+  }
+
+  .sound-column {
+    padding: 0.55rem;
+    border-radius: 0.55rem;
+  }
+
+  .timeline-dock {
+    padding: 0.5rem 0.55rem 0.55rem;
+    height: clamp(8rem, 34dvh, 11rem);
+    max-height: 36dvh;
+  }
+
+  .timeline-controls {
+    gap: 0.3rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .timeline-controls select,
+  .timeline-controls button {
+    min-height: 1.75rem;
+    padding: 0.2rem 0.4rem;
+    font-size: 0.76rem;
+  }
+
+  .timeline-row {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.35rem;
+    margin-bottom: 0.45rem;
+  }
+
+  .timeline-track-label {
+    font-size: 0.72rem;
+    gap: 0.2rem;
+  }
+
+  .bar-cell {
+    min-height: 1.35rem;
+    font-size: 0.66rem;
+  }
+
+  .step-grid-editor {
+    --row-label-width: 2.25rem;
+    --row-gap: 0.16rem;
+  }
+
+  .grid-row {
+    grid-template-columns: 2.25rem repeat(16, minmax(0, 1fr));
+    gap: 0.14rem;
+  }
+
+  .row-label {
+    font-size: 0.62rem;
+  }
+
+  .step-cell {
+    min-height: 1.42rem;
+  }
 }
 
 @media (min-width: 900px) {

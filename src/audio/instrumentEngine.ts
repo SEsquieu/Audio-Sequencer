@@ -20,6 +20,11 @@ interface SynthVoice {
   bGain: GainNode;
 }
 
+export interface VoiceDiagnostics {
+  synthVoiceSteals: number;
+  synthVoiceStealsByTrack: Record<string, number>;
+}
+
 const createDriveCurve = (amount: number): Float32Array => {
   const samples = 512;
   const curve = new Float32Array(samples);
@@ -39,6 +44,8 @@ const smoothParam = (param: AudioParam, value: number, when: number, time = PARA
 class SynthVoicePool {
   private voices = new Map<string, SynthVoice[]>();
   private nextVoiceId = 1;
+  private steals = 0;
+  private stealsByTrack = new Map<string, number>();
 
   constructor(private readonly getContext: () => AudioContext | null) {}
 
@@ -56,6 +63,18 @@ class SynthVoicePool {
         voice.activeUntil = now;
       }
     }
+  }
+
+  resetDiagnostics(): void {
+    this.steals = 0;
+    this.stealsByTrack.clear();
+  }
+
+  getDiagnostics(): VoiceDiagnostics {
+    return {
+      synthVoiceSteals: this.steals,
+      synthVoiceStealsByTrack: Object.fromEntries(this.stealsByTrack.entries()),
+    };
   }
 
   getVoice(track: Track, output: AudioNode, when: number): SynthVoice | null {
@@ -85,6 +104,8 @@ class SynthVoicePool {
     }
 
     const fallback = [...pool].sort((a, b) => a.activeUntil - b.activeUntil)[0];
+    this.steals += 1;
+    this.stealsByTrack.set(track.id, (this.stealsByTrack.get(track.id) ?? 0) + 1);
     fallback.state = "active";
     fallback.amp.gain.cancelScheduledValues(when);
     fallback.amp.gain.setValueAtTime(MIN_GAIN, when);
@@ -140,6 +161,14 @@ export class InstrumentEngine {
 
   stopAllVoices(): void {
     this.synthVoices.stopAll();
+  }
+
+  resetDiagnostics(): void {
+    this.synthVoices.resetDiagnostics();
+  }
+
+  getDiagnostics(): VoiceDiagnostics {
+    return this.synthVoices.getDiagnostics();
   }
 
   playSynthNote(
