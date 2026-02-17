@@ -216,6 +216,7 @@ function App() {
   const [modOpen, setModOpen] = useState(false);
   const [oscOpen, setOscOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
+  const [isSoundOpen, setIsSoundOpen] = useState(false);
   const [octaveBase, setOctaveBase] = useState(DEFAULT_OCTAVE_BASE);
   const [octaveTransition, setOctaveTransition] = useState<{
     from: number;
@@ -405,6 +406,12 @@ function App() {
       setOctaveBase(preferred);
     }
   }, [octaveBase, track, trackOctaves]);
+
+  useEffect(() => {
+    if (!track) {
+      setIsSoundOpen(false);
+    }
+  }, [track]);
 
   const onPlay = useCallback(async () => {
     if (!engineRef.current) {
@@ -1173,11 +1180,27 @@ function App() {
           <button
             type="button"
             className="ai-dock-button"
-            onClick={() => setIsAiOpen(true)}
+            onClick={() => {
+              setIsSoundOpen(false);
+              setIsAiOpen(true);
+            }}
             aria-label="Open Smart Patch panel"
           >
             Smart Patch
           </button>
+          {track && (
+            <button
+              type="button"
+              className="sound-dock-button"
+              onClick={() => {
+                setIsAiOpen(false);
+                setIsSoundOpen(true);
+              }}
+              aria-label="Open Sound panel"
+            >
+              Sound
+            </button>
+          )}
         </div>
         <div className="status-row">
           <label>
@@ -1309,8 +1332,21 @@ function App() {
           </section>
 
           {track && (
-            <aside className="sound-column" aria-label="Sound Controls">
-              <h2>Sound - {track.name}</h2>
+            <aside
+              className={["sound-column", isSoundOpen ? "open" : ""].join(" ")}
+              aria-label="Sound Controls"
+            >
+              <div className="sound-sheet-header">
+                <h2>Sound - {track.name}</h2>
+                <button
+                  type="button"
+                  className="sound-sheet-close"
+                  onClick={() => setIsSoundOpen(false)}
+                  aria-label="Close Sound panel"
+                >
+                  Close
+                </button>
+              </div>
               <label className="preset-select">
                 <span>Preset</span>
                 <select value={selectedPresetId ?? "custom"} onChange={(e) => onPresetChange(e.target.value)}>
@@ -1597,6 +1633,14 @@ function App() {
         </div>
       </section>
 
+      {isSoundOpen && (
+        <button
+          type="button"
+          className="sound-sheet-backdrop"
+          onClick={() => setIsSoundOpen(false)}
+          aria-label="Close Sound panel"
+        />
+      )}
       {isAiOpen && <button type="button" className="ai-sheet-backdrop" onClick={() => setIsAiOpen(false)} />}
 
       <section className={["ai-sheet", isAiOpen ? "open" : ""].join(" ")} aria-label="Smart Patch Panel">

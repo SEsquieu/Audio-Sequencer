@@ -88,6 +88,15 @@ select {
   font-weight: 600;
 }
 
+.sound-dock-button {
+  display: none;
+  border: 1px solid #475569;
+  background: #111827;
+  color: #e2e8f0;
+  border-radius: 0.5rem;
+  padding: 0.35rem 0.7rem;
+}
+
 .status-row {
   display: flex;
   justify-content: space-between;
@@ -138,7 +147,33 @@ select {
 }
 
 .sound-column h2 {
-  margin-top: 0;
+  margin: 0;
+}
+
+.sound-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.45rem;
+}
+
+.sound-sheet-close {
+  display: none;
+  border: 1px solid #475569;
+  background: #111827;
+  color: #e2e8f0;
+  border-radius: 0.45rem;
+  padding: 0.25rem 0.5rem;
+}
+
+.sound-sheet-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  border: 0;
+  background: rgba(2, 6, 23, 0.55);
 }
 
 .preset-select {
@@ -932,6 +967,17 @@ select {
     scrollbar-width: thin;
   }
 
+  .ai-dock-button {
+    margin-left: 0;
+  }
+
+  .sound-dock-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+  }
+
   .status-row {
     flex-wrap: wrap;
     gap: 0.45rem 0.7rem;
@@ -951,8 +997,35 @@ select {
   }
 
   .sound-column {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 26;
+    border: 1px solid #334155;
+    border-bottom: 0;
+    border-top-left-radius: 0.8rem;
+    border-top-right-radius: 0.8rem;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+    background: #0b1223;
     padding: 0.55rem;
-    border-radius: 0.55rem;
+    max-height: 72dvh;
+    overflow: auto;
+    transform: translateY(102%);
+    transition: transform 220ms ease;
+  }
+
+  .sound-column.open {
+    transform: translateY(0%);
+  }
+
+  .sound-sheet-close {
+    display: inline-flex;
+  }
+
+  .sound-sheet-backdrop {
+    display: block;
   }
 
   .timeline-dock {
@@ -1021,10 +1094,19 @@ select {
   }
 
   .sound-column {
+    position: static;
+    transform: none;
+    transition: none;
+    max-height: none;
     border: 0;
     border-left: 1px solid #334155;
     border-radius: 0;
     padding: 0.75rem;
+    overflow: auto;
+  }
+
+  .sound-dock-button {
+    display: none;
   }
 
   .timeline-dock {
