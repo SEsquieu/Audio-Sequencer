@@ -311,6 +311,7 @@ function App() {
   const timelineRowRefs = useRef<Array<HTMLDivElement | null>>([]);
   const syncingTimelineScrollRef = useRef(false);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
+  const isLoopTouchDragActive = Boolean(loopDrag && loopDrag.pointerType !== "mouse");
 
   useEffect(() => {
     songRef.current = song;
@@ -1630,7 +1631,7 @@ function App() {
 
   return (
     <div
-      className="app-shell"
+      className={["app-shell", isLoopTouchDragActive ? "loop-touch-drag-active" : ""].join(" ")}
       onPointerDownCapture={() => {
         void getOrCreateEngine().ensureContext();
       }}
