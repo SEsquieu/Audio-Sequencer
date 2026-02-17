@@ -1,4 +1,4 @@
-import { SongState } from "../types/song";
+import { SongState, Track } from "../types/song";
 import { createNoiseBuffer, InstrumentEngine } from "./instrumentEngine";
 import { MixerGraph } from "./mixerGraph";
 import { scheduleSongStep } from "./scheduler";
@@ -176,6 +176,43 @@ export class AudioEngine {
 
   get playing() {
     return this.isPlaying;
+  }
+
+  async previewSynthNote(
+    track: Track,
+    pitch: number,
+    velocity = 0.9,
+    lengthSteps = 1,
+    tempo = 120
+  ) {
+    await this.ensureContext();
+    if (!this.context) {
+      return;
+    }
+    if (this.context.state !== "running") {
+      try {
+        await this.context.resume();
+      } catch {
+        return;
+      }
+    }
+    const when = this.context.currentTime + 0.005;
+    try {
+      this.instrumentEngine.playSynthNote(track, pitch, velocity, lengthSteps, when, tempo);
+    } catch {
+      // Last-resort preview path for "always make sound" if synth rendering fails.
+      const osc = this.context.createOscillator();
+      const gain = this.context.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(440 * 2 ** ((pitch - 69) / 12), when);
+      gain.gain.setValueAtTime(0.0001, when);
+      gain.gain.linearRampToValueAtTime(0.12, when + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.2);
+      osc.connect(gain);
+      gain.connect(this.mixer.getOutputNode(this.context));
+      osc.start(when);
+      osc.stop(when + 0.22);
+    }
   }
 
   private scheduler() {

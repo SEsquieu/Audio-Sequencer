@@ -1,28 +1,64 @@
-# Beepbox x Strudel x AI Patch (MVP)
+# Audio Sequencer
 
-A mobile-friendly Vite + React + TypeScript prototype where the song is a JSON `SongState`, and all edits are reversible JSON Patch operations.
+A browser-based sequencer built with Vite + React + TypeScript.
 
-## Features
+The app is designed around a canonical JSON song state and a deterministic-ish WebAudio engine. It supports pattern-based composition, synth/drum editing, live transport control, undo/redo via JSON patch history, and AI-assisted patch proposals.
 
-- Song model with tracks, patterns, lanes, tempo, and swing
-- JSON Patch core (`applyPatch`, `invertPatch`) with undo/redo history
-- WebAudio playback (synth + drum voices) with lookahead scheduler
-- Four-tab mobile UI: Timeline, Edit, Sound, AI
-- AI patch stub with deterministic keyword-driven candidates
-- Audition flow: temporary apply, accept, reject, revert
-- Local storage persistence for song + history
+## What The App Does
 
-## Run
+- Edits songs as structured `SongState` data (tracks, patterns, lanes, bars, tempo, swing)
+- Plays synth + drum tracks with WebAudio scheduling and lookahead
+- Supports loop ranges, per-track mute, and a global timeline sweep
+- Provides a piano-roll style synth editor and step drum editor
+- Includes instrument controls (oscillator, envelope, filter, mod, gain/lofi)
+- Uses reversible patch operations for undo/redo and AI audition/accept flows
+
+## UX Highlights
+
+- Mobile-first layout tuning:
+  - compact transport/status controls
+  - collapsible timeline controls
+  - Sound editor as a mobile bottom sheet
+- Timeline and editor sweep indicators for playback tracking
+- Octave scrubber for synth note range navigation
+- Note-span persistence for faster repeated note placement
+
+## Tech Stack
+
+- React 18
+- TypeScript
+- Vite
+- WebAudio API
+
+## Project Structure
+
+- `src/audio/` - audio engine, scheduler, transport, mixer/instrument modules
+- `src/state/` - song context, patch application/inversion, defaults/presets
+- `src/types/song.ts` - canonical song and patch types
+- `src/components/` - sound design and editor UI components
+- `src/ai/aiProposePatch.ts` - deterministic AI patch proposal stub
+
+## Development
+
+Install and run:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Then open the local Vite URL shown in terminal.
+Build:
+
+```bash
+npm run build
+```
+
+## Deployment
+
+This repo is intended to deploy from `main` (for example via Vercel). Pushes to `main` can be used as live test checkpoints.
 
 ## Notes
 
 - No backend is required.
-- AI is stubbed at `src/ai/aiProposePatch.ts`.
-- "New Song" resets song and history.
+- AI behavior is local/stubbed unless you replace `src/ai/aiProposePatch.ts`.
+- `New Song` resets arrangement/history state.

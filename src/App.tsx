@@ -124,6 +124,25 @@ const getSynthStepVisual = (steps: SynthStep[][], pitch: number, stepIndex: numb
   return "off";
 };
 
+const findSynthNoteAtStep = (
+  steps: SynthStep[][],
+  pitch: number,
+  stepIndex: number
+): { start: number; length: number } | null => {
+  for (let start = stepIndex; start >= 0; start -= 1) {
+    const note = normalizeSynthCell(steps[start]).find((n) => n.pitch === pitch);
+    if (!note) {
+      continue;
+    }
+    const length = Math.max(1, note.length);
+    const end = Math.min(15, start + length - 1);
+    if (stepIndex >= start && stepIndex <= end) {
+      return { start, length };
+    }
+  }
+  return null;
+};
+
 const getDefaultOctaveForTrack = (track?: Track): number => {
   if (!track || track.type !== "synth") {
     return DEFAULT_OCTAVE_BASE;
@@ -178,6 +197,8 @@ interface SynthDragState {
   moved: boolean;
   startClientX: number;
   cellWidth: number;
+  originNoteStart: number | null;
+  originNoteLength: number | null;
 }
 
 interface LoopRange {
@@ -241,6 +262,7 @@ function App() {
   const [prompt, setPrompt] = useState("");
   const [candidates, setCandidates] = useState<PatchMeta[]>([]);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
+  const [trackNoteSpanMemory, setTrackNoteSpanMemory] = useState<Record<string, number>>({});
   const [mobileTimelineControlsOpen, setMobileTimelineControlsOpen] = useState(false);
   const [isMobileTimelineLayout, setIsMobileTimelineLayout] = useState<boolean>(() => {
     if (typeof window === "undefined") {
@@ -271,6 +293,18 @@ function App() {
       engineRef.current = engine;
     }
   }, [masterVolume]);
+
+  const getOrCreateEngine = useCallback(() => {
+    let engine = engineRef.current;
+    if (!engine) {
+      engine = new AudioEngine();
+      engine.onTick((info) => setPlayhead(info));
+      engine.setMasterVolume(masterVolume);
+      engine.setMutedTrackIds(mutedTrackIds);
+      engineRef.current = engine;
+    }
+    return engine;
+  }, [masterVolume, mutedTrackIds]);
 
   useEffect(() => {
     engineRef.current?.setMasterVolume(masterVolume);
@@ -562,6 +596,8 @@ function App() {
     const isUnassigned = patternId === "0" || !pattern || pattern.type !== "synth";
     const targetPatternId = isUnassigned ? nextPatternIdFromRecord(track.patterns) : patternId;
     const sourceSteps = isUnassigned ? createEmptySynthSteps() : pattern.steps;
+    const rememberedLength = Math.max(1, Math.floor(trackNoteSpanMemory[track.id] ?? 1));
+    const nextLength = Math.max(1, Math.min(16 - stepIndex, rememberedLength));
 
     const current = normalizeSynthCell(sourceSteps[stepIndex]);
     const hasPitch = current.some((note) => note.pitch === pitch);
@@ -570,7 +606,7 @@ function App() {
     }
     const nextValue = hasPitch
       ? current.filter((note) => note.pitch !== pitch)
-      : [...current, { pitch, velocity: 0.9, length: 1 }].sort((a, b) => b.pitch - a.pitch);
+      : [...current, { pitch, velocity: 0.9, length: nextLength }].sort((a, b) => b.pitch - a.pitch);
 
     const ops: JsonPatchOp[] = [];
     if (isUnassigned) {
@@ -594,16 +630,8 @@ function App() {
     if (!hasPitch) {
       const overlapStart = findPreviousOverlappingStart(sourceSteps, pitch, stepIndex);
       if (overlapStart !== null) {
-        const overlapNotes = normalizeSynthCell(sourceSteps[overlapStart]);
-        const clippedLength = Math.max(1, stepIndex - overlapStart);
-        const nextOverlapNotes = overlapNotes.map((note) =>
-          note.pitch === pitch ? { ...note, length: clippedLength } : note
-        );
-        ops.push({
-          op: "replace",
-          path: `/tracks/${safeTrackIndex}/patterns/${targetPatternId}/steps/${overlapStart}`,
-          value: nextOverlapNotes,
-        });
+        // Note-span persistence mode: do not clip and restart inside an active span.
+        return;
       }
     }
 
@@ -612,6 +640,21 @@ function App() {
       path: `/tracks/${safeTrackIndex}/patterns/${targetPatternId}/steps/${stepIndex}`,
       value: nextValue,
     });
+
+    if (!hasPitch && nextLength > 1) {
+      const endStep = Math.min(15, stepIndex + nextLength - 1);
+      for (let step = stepIndex + 1; step <= endStep; step += 1) {
+        const notes = normalizeSynthCell(sourceSteps[step]);
+        if (!notes.some((note) => note.pitch === pitch)) {
+          continue;
+        }
+        ops.push({
+          op: "replace",
+          path: `/tracks/${safeTrackIndex}/patterns/${targetPatternId}/steps/${step}`,
+          value: notes.filter((note) => note.pitch !== pitch),
+        });
+      }
+    }
 
     createAndCommit("Edit Synth Step", ops);
   };
@@ -697,6 +740,42 @@ function App() {
     }
 
     createAndCommit("Extend Synth Note", ops);
+    setTrackNoteSpanMemory((prev) => ({ ...prev, [track.id]: length }));
+  };
+
+  const onRemoveSynthNote = (stepIndex: number, pitch: number) => {
+    if (!track || track.type !== "synth" || !patternId || !pattern || pattern.type !== "synth") {
+      return;
+    }
+
+    const sourceSteps = pattern.steps;
+    const noteInfo = findSynthNoteAtStep(sourceSteps, pitch, stepIndex);
+    if (!noteInfo) {
+      return;
+    }
+
+    const ops: JsonPatchOp[] = [];
+    const startNotes = normalizeSynthCell(sourceSteps[noteInfo.start]);
+    ops.push({
+      op: "replace",
+      path: `/tracks/${safeTrackIndex}/patterns/${patternId}/steps/${noteInfo.start}`,
+      value: startNotes.filter((note) => note.pitch !== pitch),
+    });
+
+    const end = Math.min(15, noteInfo.start + noteInfo.length - 1);
+    for (let step = noteInfo.start + 1; step <= end; step += 1) {
+      const notes = normalizeSynthCell(sourceSteps[step]);
+      if (!notes.some((note) => note.pitch === pitch)) {
+        continue;
+      }
+      ops.push({
+        op: "replace",
+        path: `/tracks/${safeTrackIndex}/patterns/${patternId}/steps/${step}`,
+        value: notes.filter((note) => note.pitch !== pitch),
+      });
+    }
+
+    createAndCommit("Remove Synth Note", ops);
   };
 
   const onSynthPointerDown = (stepIndex: number, pitch: number, event: ReactPointerEvent<HTMLButtonElement>) => {
@@ -712,6 +791,7 @@ function App() {
     event.currentTarget.setPointerCapture(event.pointerId);
     activeSynthPointerIdRef.current = event.pointerId;
     const cellRect = event.currentTarget.getBoundingClientRect();
+    const origin = findSynthNoteAtStep(synthPatternSteps, pitch, stepIndex);
     setSynthDrag({
       startStep: stepIndex,
       endStep: stepIndex,
@@ -719,6 +799,8 @@ function App() {
       moved: false,
       startClientX: event.clientX,
       cellWidth: Math.max(1, cellRect.width),
+      originNoteStart: origin?.start ?? null,
+      originNoteLength: origin?.length ?? null,
     });
   };
 
@@ -771,8 +853,19 @@ function App() {
       return;
     }
 
-    const { startStep, endStep, pitch, moved } = synthDrag;
+    const { startStep, endStep, pitch, moved, originNoteStart, originNoteLength } = synthDrag;
     setSynthDrag(null);
+
+    if (originNoteStart !== null) {
+      if (moved && endStep < startStep) {
+        const originalEnd = Math.min(15, originNoteStart + Math.max(1, originNoteLength ?? 1) - 1);
+        const nextEnd = Math.max(originNoteStart, Math.min(originalEnd, endStep));
+        onSetSynthNoteLength(originNoteStart, nextEnd, pitch);
+        return;
+      }
+      onRemoveSynthNote(startStep, pitch);
+      return;
+    }
 
     if (!moved || endStep === startStep) {
       onToggleSynthCell(startStep, pitch);
@@ -780,7 +873,7 @@ function App() {
     }
 
     onSetSynthNoteLength(startStep, endStep, pitch);
-  }, [onSetSynthNoteLength, onToggleSynthCell, synthDrag]);
+  }, [onRemoveSynthNote, onSetSynthNoteLength, onToggleSynthCell, synthDrag]);
 
   useEffect(() => {
     if (!synthDrag) {
@@ -845,6 +938,14 @@ function App() {
 
   const onWaveformChange = (key: "oscWaveformA" | "oscWaveformB", value: WaveformType) => {
     applySingleReplace(`/tracks/${safeTrackIndex}/instrument/${key}`, value, `Adjust ${key}`);
+  };
+
+  const onPreviewSynthPitch = (pitch: number) => {
+    if (!track || track.type !== "synth" || !isPitchInEditableRange(pitch)) {
+      return;
+    }
+    const engine = getOrCreateEngine();
+    void engine.previewSynthNote(track, pitch, 1, 2, song.tempo);
   };
 
   const onPresetChange = (presetId: string) => {
@@ -1046,6 +1147,7 @@ function App() {
     setLoopRange(null);
     setLoopDrag(null);
     setTrackOctaves({});
+    setTrackNoteSpanMemory({});
     setOctaveBase(DEFAULT_OCTAVE_BASE);
     setOctaveTransition(null);
   };
@@ -1192,14 +1294,27 @@ function App() {
                 : "key-white",
         ].join(" ")}
       >
-        <span className="row-label">{inRange ? toNoteName(pitch) : ""}</span>
+        <button
+          type="button"
+          className="row-label piano-key"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onPreviewSynthPitch(pitch);
+          }}
+          aria-label={inRange ? `Play ${toNoteWithOctave(pitch)}` : undefined}
+          disabled={!inRange}
+        >
+          {inRange ? toNoteName(pitch) : ""}
+        </button>
         {Array.from({ length: 16 }, (_, step) => {
           if (!inRange) {
             return <span key={`${pitch}-${step}`} className="step-cell synth-cell hidden-cell" aria-hidden="true" />;
           }
-          const previewEnd = synthDrag ? Math.max(synthDrag.startStep, synthDrag.endStep) : -1;
+          const dragPreviewActive = Boolean(synthDrag?.moved);
+          const previewEnd = dragPreviewActive && synthDrag ? Math.max(synthDrag.startStep, synthDrag.endStep) : -1;
           const isDragPreviewOn =
-            Boolean(synthDrag) &&
+            dragPreviewActive &&
             synthDrag?.pitch === pitch &&
             step >= synthDrag.startStep &&
             step <= previewEnd;
@@ -1237,7 +1352,12 @@ function App() {
     ));
 
   return (
-    <div className="app-shell">
+    <div
+      className="app-shell"
+      onPointerDownCapture={() => {
+        void getOrCreateEngine().ensureContext();
+      }}
+    >
       <header className="topbar">
         <h1>Beepbox x Strudel x AI Patch</h1>
         <div className="top-controls">
