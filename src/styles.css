@@ -811,11 +811,27 @@ select {
   padding: 0;
   cursor: pointer;
   user-select: none;
+  touch-action: none;
 }
 
 .piano-key:disabled {
   opacity: 0;
   pointer-events: none;
+}
+
+.drum-lane-key {
+  border: 1px solid #475569;
+  border-radius: 0.22rem;
+  min-height: 100%;
+  width: 100%;
+  text-align: center;
+  padding: 0;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  background: #0b1220;
+  color: #cbd5e1;
+  text-transform: capitalize;
 }
 
 .step-cell {

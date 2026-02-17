@@ -218,6 +218,18 @@ interface OctaveScrubState {
   lastStepDelta: number;
 }
 
+interface PianoWalkState {
+  active: boolean;
+  pointerId: number | null;
+  lastPitch: number | null;
+}
+
+interface DrumWalkState {
+  active: boolean;
+  pointerId: number | null;
+  lastLane: "kick" | "snare" | "hat" | null;
+}
+
 function App() {
   const {
     song,
@@ -275,6 +287,16 @@ function App() {
   const songRef = useRef<SongState>(song);
   const octaveScrubRef = useRef<OctaveScrubState | null>(null);
   const octaveTransitionTimerRef = useRef<number | null>(null);
+  const pianoWalkRef = useRef<PianoWalkState>({
+    active: false,
+    pointerId: null,
+    lastPitch: null,
+  });
+  const drumWalkRef = useRef<DrumWalkState>({
+    active: false,
+    pointerId: null,
+    lastLane: null,
+  });
   const suppressBarClickRef = useRef(false);
   const activeSynthPointerIdRef = useRef<number | null>(null);
   const timelineRowRefs = useRef<Array<HTMLDivElement | null>>([]);
@@ -940,13 +962,133 @@ function App() {
     applySingleReplace(`/tracks/${safeTrackIndex}/instrument/${key}`, value, `Adjust ${key}`);
   };
 
-  const onPreviewSynthPitch = (pitch: number) => {
+  const onPreviewSynthPitch = useCallback((pitch: number) => {
     if (!track || track.type !== "synth" || !isPitchInEditableRange(pitch)) {
       return;
     }
     const engine = getOrCreateEngine();
     void engine.previewSynthNote(track, pitch, 1, 2, song.tempo);
+  }, [getOrCreateEngine, song.tempo, track]);
+
+  const onPreviewDrumLane = useCallback(
+    (lane: "kick" | "snare" | "hat") => {
+      if (!track || track.type !== "drums") {
+        return;
+      }
+      const engine = getOrCreateEngine();
+      const velocity = lane === "hat" ? 0.75 : 1;
+      void engine.previewDrumHit(track, lane, velocity);
+    },
+    [getOrCreateEngine, track]
+  );
+
+  const onPianoKeyPointerDown = (event: ReactPointerEvent<HTMLButtonElement>, pitch: number) => {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!isPitchInEditableRange(pitch)) {
+      return;
+    }
+    pianoWalkRef.current.active = true;
+    pianoWalkRef.current.pointerId = event.pointerId;
+    pianoWalkRef.current.lastPitch = pitch;
+    onPreviewSynthPitch(pitch);
   };
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const walk = pianoWalkRef.current;
+      if (!walk.active || walk.pointerId !== event.pointerId) {
+        return;
+      }
+      const target = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+      const key = target?.closest("[data-piano-pitch]") as HTMLElement | null;
+      if (!key) {
+        return;
+      }
+      const pitchValue = Number(key.dataset.pianoPitch);
+      if (!Number.isFinite(pitchValue) || !isPitchInEditableRange(pitchValue)) {
+        return;
+      }
+      if (walk.lastPitch === pitchValue) {
+        return;
+      }
+      walk.lastPitch = pitchValue;
+      onPreviewSynthPitch(pitchValue);
+    };
+
+    const onPointerDone = (event: PointerEvent) => {
+      const walk = pianoWalkRef.current;
+      if (!walk.active || walk.pointerId !== event.pointerId) {
+        return;
+      }
+      walk.active = false;
+      walk.pointerId = null;
+      walk.lastPitch = null;
+    };
+
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerup", onPointerDone);
+    window.addEventListener("pointercancel", onPointerDone);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerDone);
+      window.removeEventListener("pointercancel", onPointerDone);
+    };
+  }, [onPreviewSynthPitch]);
+
+  const onDrumLanePointerDown = (
+    event: ReactPointerEvent<HTMLButtonElement>,
+    lane: "kick" | "snare" | "hat"
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    drumWalkRef.current.active = true;
+    drumWalkRef.current.pointerId = event.pointerId;
+    drumWalkRef.current.lastLane = lane;
+    onPreviewDrumLane(lane);
+  };
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const walk = drumWalkRef.current;
+      if (!walk.active || walk.pointerId !== event.pointerId) {
+        return;
+      }
+      const target = document.elementFromPoint(event.clientX, event.clientY) as HTMLElement | null;
+      const laneEl = target?.closest("[data-drum-lane]") as HTMLElement | null;
+      if (!laneEl) {
+        return;
+      }
+      const lane = laneEl.dataset.drumLane as "kick" | "snare" | "hat" | undefined;
+      if (!lane || (lane !== "kick" && lane !== "snare" && lane !== "hat")) {
+        return;
+      }
+      if (walk.lastLane === lane) {
+        return;
+      }
+      walk.lastLane = lane;
+      onPreviewDrumLane(lane);
+    };
+
+    const onPointerDone = (event: PointerEvent) => {
+      const walk = drumWalkRef.current;
+      if (!walk.active || walk.pointerId !== event.pointerId) {
+        return;
+      }
+      walk.active = false;
+      walk.pointerId = null;
+      walk.lastLane = null;
+    };
+
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerup", onPointerDone);
+    window.addEventListener("pointercancel", onPointerDone);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerDone);
+      window.removeEventListener("pointercancel", onPointerDone);
+    };
+  }, [onPreviewDrumLane]);
 
   const onPresetChange = (presetId: string) => {
     if (!track || presetId === "custom") {
@@ -1297,11 +1439,8 @@ function App() {
         <button
           type="button"
           className="row-label piano-key"
-          onPointerDown={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            onPreviewSynthPitch(pitch);
-          }}
+          data-piano-pitch={inRange ? pitch : undefined}
+          onPointerDown={(event) => onPianoKeyPointerDown(event, pitch)}
           aria-label={inRange ? `Play ${toNoteWithOctave(pitch)}` : undefined}
           disabled={!inRange}
         >
@@ -1531,7 +1670,15 @@ function App() {
                     {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
                     {(["kick", "snare", "hat"] as const).map((lane) => (
                       <div key={lane} className="grid-row">
-                        <span className="row-label">{lane}</span>
+                        <button
+                          type="button"
+                          className="row-label drum-lane-key"
+                          data-drum-lane={lane}
+                          onPointerDown={(event) => onDrumLanePointerDown(event, lane)}
+                          aria-label={`Preview ${lane}`}
+                        >
+                          {lane}
+                        </button>
                         {Array.from({ length: 16 }, (_, step) => {
                           const velocity = drumPatternSteps[step][lane];
                           return (

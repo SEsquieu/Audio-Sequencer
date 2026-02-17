@@ -215,6 +215,34 @@ export class AudioEngine {
     }
   }
 
+  async previewDrumHit(track: Track, lane: "kick" | "snare" | "hat", velocity = 1) {
+    if (track.type !== "drums") {
+      return;
+    }
+    await this.ensureContext();
+    if (!this.context) {
+      return;
+    }
+    if (this.context.state !== "running") {
+      try {
+        await this.context.resume();
+      } catch {
+        return;
+      }
+    }
+
+    const when = this.context.currentTime + 0.005;
+    if (lane === "kick") {
+      this.instrumentEngine.playKick(track, when, velocity);
+      return;
+    }
+    if (lane === "snare") {
+      this.instrumentEngine.playSnare(track, when, velocity);
+      return;
+    }
+    this.instrumentEngine.playHat(track, when, velocity);
+  }
+
   private scheduler() {
     if (!this.context || !this.getSong) {
       return;
