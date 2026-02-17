@@ -277,8 +277,8 @@ function App() {
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
   const [trackNoteSpanMemory, setTrackNoteSpanMemory] = useState<Record<string, number>>({});
   const [mobileTimelineControlsOpen, setMobileTimelineControlsOpen] = useState(false);
-  const [isTempoEditing, setIsTempoEditing] = useState(false);
   const [tempoDraft, setTempoDraft] = useState(() => String(song.tempo));
+  const [isTempoFieldFocused, setIsTempoFieldFocused] = useState(false);
   const [isMobileTimelineLayout, setIsMobileTimelineLayout] = useState<boolean>(() => {
     if (typeof window === "undefined") {
       return false;
@@ -311,10 +311,10 @@ function App() {
   }, [song]);
 
   useEffect(() => {
-    if (!isTempoEditing) {
+    if (!isTempoFieldFocused) {
       setTempoDraft(String(song.tempo));
     }
-  }, [isTempoEditing, song.tempo]);
+  }, [isTempoFieldFocused, song.tempo]);
 
   useEffect(() => {
     if (!engineRef.current) {
@@ -627,7 +627,6 @@ function App() {
     } else {
       setTempoDraft(String(song.tempo));
     }
-    setIsTempoEditing(false);
   }, [onTempoChange, song.tempo, tempoDraft]);
 
   const onToggleSynthCell = (stepIndex: number, pitch: number) => {
@@ -1625,47 +1624,35 @@ function App() {
               value={song.tempo}
               onChange={(e) => onTempoChange(Number(e.target.value))}
             />
-            {isTempoEditing ? (
-              <input
-                className="tempo-value-input"
-                type="number"
-                min={70}
-                max={180}
-                step={1}
-                inputMode="numeric"
-                pattern="[0-9]*"
-                value={tempoDraft}
-                onChange={(e) => setTempoDraft(e.target.value)}
-                onBlur={commitTempoDraft}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    commitTempoDraft();
-                    return;
-                  }
-                  if (e.key === "Escape") {
-                    e.preventDefault();
-                    setTempoDraft(String(song.tempo));
-                    setIsTempoEditing(false);
-                  }
-                }}
-                aria-label="Tempo BPM"
-                autoFocus
-              />
-            ) : (
-              <button
-                type="button"
-                className="tempo-value-button"
-                onClick={() => {
+            <input
+              className="tempo-value-input"
+              type="number"
+              min={70}
+              max={180}
+              step={1}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={tempoDraft}
+              onFocus={() => setIsTempoFieldFocused(true)}
+              onChange={(e) => setTempoDraft(e.target.value)}
+              onBlur={() => {
+                setIsTempoFieldFocused(false);
+                commitTempoDraft();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  (e.currentTarget as HTMLInputElement).blur();
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
                   setTempoDraft(String(song.tempo));
-                  setIsTempoEditing(true);
-                }}
-                aria-label="Edit tempo"
-                title="Edit tempo"
-              >
-                {song.tempo}
-              </button>
-            )}
+                  (e.currentTarget as HTMLInputElement).blur();
+                }
+              }}
+              aria-label="Tempo BPM"
+            />
           </label>
           <label className="master-volume">
             Master

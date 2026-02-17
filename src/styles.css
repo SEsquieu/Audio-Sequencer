@@ -111,7 +111,6 @@ select {
   gap: 0.4rem;
 }
 
-.tempo-value-button,
 .tempo-value-input {
   width: 3.25rem;
   min-width: 3.25rem;
@@ -119,21 +118,19 @@ select {
   font-variant-numeric: tabular-nums;
 }
 
-.tempo-value-button {
-  border: 1px solid #475569;
-  background: #111827;
-  color: #e2e8f0;
-  border-radius: 0.4rem;
-  padding: 0.1rem 0.35rem;
-  cursor: pointer;
-}
-
 .tempo-value-input {
+  appearance: textfield;
   border: 1px solid #475569;
   background: #0b1220;
   color: #e2e8f0;
   border-radius: 0.4rem;
   padding: 0.1rem 0.35rem;
+}
+
+.tempo-value-input::-webkit-outer-spin-button,
+.tempo-value-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
 }
 
 .status-row .master-volume {
