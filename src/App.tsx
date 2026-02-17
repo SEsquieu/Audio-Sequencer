@@ -21,7 +21,8 @@ const MIN_OCTAVE_BASE = 24;
 const MAX_OCTAVE_BASE = 96;
 const DEFAULT_OCTAVE_BASE = 60;
 const BASS_OCTAVE_BASE = 36;
-const OCTAVE_TRANSITION_MS = 260;
+const OCTAVE_SCRUB_STEP_PX = 16;
+const OCTAVE_TRANSITION_MS = 180;
 const TIMELINE_LABEL_REM = 6;
 const TIMELINE_ROW_GAP_REM = 0.45;
 const TIMELINE_BAR_INNER_PAD_REM = 0.2;
@@ -184,6 +185,13 @@ interface LoopDragState {
   moved: boolean;
 }
 
+interface OctaveScrubState {
+  pointerId: number;
+  startY: number;
+  startBase: number;
+  lastStepDelta: number;
+}
+
 function App() {
   const {
     song,
@@ -218,6 +226,7 @@ function App() {
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isSoundOpen, setIsSoundOpen] = useState(false);
   const [octaveBase, setOctaveBase] = useState(DEFAULT_OCTAVE_BASE);
+  const [octaveScrubOffsetPx, setOctaveScrubOffsetPx] = useState(0);
   const [octaveTransition, setOctaveTransition] = useState<{
     from: number;
     to: number;
@@ -230,6 +239,7 @@ function App() {
 
   const engineRef = useRef<AudioEngine | null>(null);
   const songRef = useRef<SongState>(song);
+  const octaveScrubRef = useRef<OctaveScrubState | null>(null);
   const octaveTransitionTimerRef = useRef<number | null>(null);
   const suppressBarClickRef = useRef(false);
   const activeSynthPointerIdRef = useRef<number | null>(null);
@@ -323,14 +333,6 @@ function App() {
     engineRef.current.setLoopRange(loopRange.start, loopRange.end);
   }, [loopRange]);
 
-  useEffect(() => {
-    return () => {
-      if (octaveTransitionTimerRef.current !== null) {
-        window.clearTimeout(octaveTransitionTimerRef.current);
-      }
-    };
-  }, []);
-
   const safeTrackIndex = Math.min(selectedTrack, Math.max(0, song.tracks.length - 1));
   const track = song.tracks[safeTrackIndex] ?? song.tracks[0];
   const patternId = track?.lane[selectedBar] ?? track?.lane[0];
@@ -412,6 +414,20 @@ function App() {
       setIsSoundOpen(false);
     }
   }, [track]);
+
+  useEffect(() => {
+    if (!track || track.type !== "synth") {
+      setOctaveScrubOffsetPx(0);
+    }
+  }, [track]);
+
+  useEffect(() => {
+    return () => {
+      if (octaveTransitionTimerRef.current !== null) {
+        window.clearTimeout(octaveTransitionTimerRef.current);
+      }
+    };
+  }, []);
 
   const onPlay = useCallback(async () => {
     if (!engineRef.current) {
@@ -1051,38 +1067,82 @@ function App() {
     };
   }, [loopDrag]);
 
-  const startOctaveShift = (direction: 1 | -1) => {
-    if (octaveTransition) {
-      return;
-    }
-
-    const target = Math.max(MIN_OCTAVE_BASE, Math.min(MAX_OCTAVE_BASE, octaveBase + direction * 12));
-    if (target === octaveBase) {
-      return;
-    }
-
-    setOctaveTransition({
-      from: octaveBase,
-      to: target,
-      direction,
-      running: false,
-    });
-
-    window.requestAnimationFrame(() => {
-      setOctaveTransition((prev) => (prev ? { ...prev, running: true } : prev));
-    });
-
-    if (octaveTransitionTimerRef.current !== null) {
-      window.clearTimeout(octaveTransitionTimerRef.current);
-    }
-    octaveTransitionTimerRef.current = window.setTimeout(() => {
-      setOctaveBase(target);
-      if (track?.type === "synth") {
-        setTrackOctaves((prev) => ({ ...prev, [track.id]: target }));
+  const applyOctaveBase = useCallback(
+    (target: number) => {
+      if (!track || track.type !== "synth") {
+        return;
       }
-      setOctaveTransition(null);
-      octaveTransitionTimerRef.current = null;
-    }, OCTAVE_TRANSITION_MS);
+      const clamped = Math.max(MIN_OCTAVE_BASE, Math.min(MAX_OCTAVE_BASE, target));
+      const visibleBase = octaveTransition?.to ?? octaveBase;
+      if (clamped === visibleBase) {
+        return;
+      }
+      if (octaveTransitionTimerRef.current !== null) {
+        window.clearTimeout(octaveTransitionTimerRef.current);
+      }
+      setOctaveTransition({
+        from: visibleBase,
+        to: clamped,
+        direction: clamped > visibleBase ? 1 : -1,
+        running: false,
+      });
+      window.requestAnimationFrame(() => {
+        setOctaveTransition((prev) => (prev ? { ...prev, running: true } : prev));
+      });
+      octaveTransitionTimerRef.current = window.setTimeout(() => {
+        setOctaveBase(clamped);
+        setTrackOctaves((prev) => ({ ...prev, [track.id]: clamped }));
+        setOctaveTransition(null);
+        octaveTransitionTimerRef.current = null;
+      }, OCTAVE_TRANSITION_MS);
+    },
+    [octaveBase, octaveTransition, track]
+  );
+
+  const onOctaveScrubPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!track || track.type !== "synth") {
+      return;
+    }
+    event.preventDefault();
+    const visibleBase = octaveTransition?.to ?? octaveBase;
+    octaveScrubRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startBase: visibleBase,
+      lastStepDelta: 0,
+    };
+    setOctaveScrubOffsetPx(0);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onOctaveScrubPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = octaveScrubRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    const deltaY = drag.startY - event.clientY;
+    const stepDelta = Math.trunc(deltaY / OCTAVE_SCRUB_STEP_PX);
+    if (stepDelta === drag.lastStepDelta) {
+      const remainder = deltaY - stepDelta * OCTAVE_SCRUB_STEP_PX;
+      setOctaveScrubOffsetPx(remainder);
+      return;
+    }
+    drag.lastStepDelta = stepDelta;
+    const remainder = deltaY - stepDelta * OCTAVE_SCRUB_STEP_PX;
+    setOctaveScrubOffsetPx(remainder);
+    applyOctaveBase(drag.startBase + stepDelta);
+  };
+
+  const onOctaveScrubPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = octaveScrubRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      return;
+    }
+    octaveScrubRef.current = null;
+    setOctaveScrubOffsetPx(0);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
   };
 
   const renderPitchRows = (rows: Array<{ pitch: number; ghost: boolean }>) =>
@@ -1240,62 +1300,68 @@ function App() {
               <section>
                 {track.type === "synth" && (
                   <div className="octave-shell">
-                    {(() => {
-                      const upBase = Math.min(MAX_OCTAVE_BASE, octaveBase + 12);
-                      const downBase = Math.max(MIN_OCTAVE_BASE, octaveBase - 12);
-                      return (
-                        <>
-                    <button
-                      type="button"
-                      className="octave-shift top"
-                      onClick={() => startOctaveShift(1)}
-                      disabled={octaveBase >= MAX_OCTAVE_BASE || Boolean(octaveTransition)}
-                      aria-label="Octave up"
-                    >
-                      ▲ Octave Up to {toNoteWithOctave(upBase)} - {toNoteWithOctave(upBase + 11)}
-                    </button>
+                    <div className="octave-editor-shell">
+                      <div
+                        className={[
+                          "octave-grid-viewport",
+                          octaveTransition ? "octave-transition" : "",
+                          octaveTransition?.direction === 1 ? "dir-up" : "dir-down",
+                          octaveTransition?.running ? "running" : "",
+                        ].join(" ")}
+                        style={{
+                          ...editorSweepStyle,
+                          "--octave-scrub-offset": `${octaveScrubOffsetPx}px`,
+                        } as CSSProperties}
+                      >
+                        {!octaveTransition && (
+                          <div className="step-grid octave-layer step-grid-editor">
+                            {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
+                            {renderPitchRows(pitchRows)}
+                          </div>
+                        )}
+                        {octaveTransition && (
+                          <>
+                            <div className="step-grid octave-layer old step-grid-editor">
+                              {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
+                              {renderPitchRows(buildPitchRows(octaveTransition.from))}
+                            </div>
+                            <div className="step-grid octave-layer new step-grid-editor">
+                              {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
+                              {renderPitchRows(buildPitchRows(octaveTransition.to))}
+                            </div>
+                          </>
+                        )}
+                      </div>
 
-                    <div
-                      className={[
-                        "octave-grid-viewport",
-                        octaveTransition ? "octave-transition" : "",
-                        octaveTransition?.direction === 1 ? "dir-up" : "dir-down",
-                        octaveTransition?.running ? "running" : "",
-                      ].join(" ")}
-                      style={editorSweepStyle}
-                    >
-                      {!octaveTransition && (
-                        <div className="step-grid octave-layer step-grid-editor">
-                          {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
-                          {renderPitchRows(pitchRows)}
+                      <div
+                        className="octave-scrubber"
+                        onPointerDown={onOctaveScrubPointerDown}
+                        onPointerMove={onOctaveScrubPointerMove}
+                        onPointerUp={onOctaveScrubPointerEnd}
+                        onPointerCancel={onOctaveScrubPointerEnd}
+                        role="slider"
+                        aria-label="Octave scrubber"
+                        aria-orientation="vertical"
+                        aria-valuemin={MIN_OCTAVE_BASE}
+                        aria-valuemax={MAX_OCTAVE_BASE}
+                        aria-valuenow={octaveBase}
+                        aria-valuetext={`${toNoteWithOctave(octaveBase)} to ${toNoteWithOctave(
+                          octaveBase + 11
+                        )}`}
+                      >
+                        <div className="octave-scrubber-track">
+                          <div
+                            className="octave-scrubber-thumb"
+                            style={{
+                              top: `${((MAX_OCTAVE_BASE - octaveBase) / (MAX_OCTAVE_BASE - MIN_OCTAVE_BASE)) * 100}%`,
+                            }}
+                          />
                         </div>
-                      )}
-                      {octaveTransition && (
-                        <>
-                          <div className="step-grid octave-layer old step-grid-editor">
-                            {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
-                            {renderPitchRows(buildPitchRows(octaveTransition.from))}
-                          </div>
-                          <div className="step-grid octave-layer new step-grid-editor">
-                            {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
-                            {renderPitchRows(buildPitchRows(octaveTransition.to))}
-                          </div>
-                        </>
-                      )}
+                        <div className="octave-scrubber-label">
+                          {toNoteWithOctave(octaveBase)}-{toNoteWithOctave(octaveBase + 11)}
+                        </div>
+                      </div>
                     </div>
-
-                    <button
-                      type="button"
-                      className="octave-shift bottom"
-                      onClick={() => startOctaveShift(-1)}
-                      disabled={octaveBase <= MIN_OCTAVE_BASE || Boolean(octaveTransition)}
-                      aria-label="Octave down"
-                    >
-                      ▼ Octave Down to {toNoteWithOctave(downBase)} - {toNoteWithOctave(downBase + 11)}
-                    </button>
-                        </>
-                      );
-                    })()}
                   </div>
                 )}
 
