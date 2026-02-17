@@ -25,8 +25,10 @@ const DEFAULT_OCTAVE_BASE = 60;
 const BASS_OCTAVE_BASE = 36;
 const OCTAVE_SCRUB_STEP_PX = 16;
 const OCTAVE_TRANSITION_MS = 180;
-const TIMELINE_LABEL_REM = 6;
-const TIMELINE_ROW_GAP_REM = 0.45;
+const TIMELINE_LABEL_REM_DESKTOP = 6;
+const TIMELINE_ROW_GAP_REM_DESKTOP = 0.45;
+const TIMELINE_LABEL_REM_MOBILE = 4.5;
+const TIMELINE_ROW_GAP_REM_MOBILE = 0.35;
 const TIMELINE_BAR_INNER_PAD_REM = 0.2;
 const TIMELINE_BAR_WIDTH_REM = 2.15;
 const TIMELINE_BAR_GAP_REM = 0.3;
@@ -239,6 +241,12 @@ function App() {
   const [prompt, setPrompt] = useState("");
   const [candidates, setCandidates] = useState<PatchMeta[]>([]);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
+  const [isMobileTimelineLayout, setIsMobileTimelineLayout] = useState<boolean>(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return window.matchMedia("(max-width: 899px)").matches;
+  });
 
   const engineRef = useRef<AudioEngine | null>(null);
   const songRef = useRef<SongState>(song);
@@ -367,9 +375,11 @@ function App() {
   const loopStepsTotal = Math.max(1, loopRangeBars * 16);
   const loopRelativeStep = (playhead.bar - loopRangeStart) * 16 + playhead.step;
   const loopRelativeBars = Math.max(0, Math.min(loopStepsTotal - 1, loopRelativeStep)) / 16;
+  const timelineLabelRem = isMobileTimelineLayout ? TIMELINE_LABEL_REM_MOBILE : TIMELINE_LABEL_REM_DESKTOP;
+  const timelineRowGapRem = isMobileTimelineLayout ? TIMELINE_ROW_GAP_REM_MOBILE : TIMELINE_ROW_GAP_REM_DESKTOP;
   const globalSweepLeftRem =
-    TIMELINE_LABEL_REM +
-    TIMELINE_ROW_GAP_REM +
+    timelineLabelRem +
+    timelineRowGapRem +
     TIMELINE_BAR_INNER_PAD_REM +
     (loopRangeStart + loopRelativeBars) * (TIMELINE_BAR_WIDTH_REM + TIMELINE_BAR_GAP_REM);
   const availablePresets = useMemo(() => (track ? getPresetsForType(track.type) : []), [track]);
@@ -417,6 +427,16 @@ function App() {
       setOctaveScrubOffsetPx(0);
     }
   }, [track]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 899px)");
+    const handleChange = () => setIsMobileTimelineLayout(media.matches);
+    handleChange();
+    media.addEventListener("change", handleChange);
+    return () => {
+      media.removeEventListener("change", handleChange);
+    };
+  }, []);
 
   useEffect(() => {
     return () => {
