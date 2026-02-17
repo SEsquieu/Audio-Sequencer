@@ -258,6 +258,33 @@ function App() {
   }, [mutedTrackIds]);
 
   useEffect(() => {
+    if (!import.meta.env.DEV || !isPlaying) {
+      return;
+    }
+    const timerId = window.setInterval(() => {
+      const diagnostics = engineRef.current?.getTimingDiagnostics();
+      if (!diagnostics) {
+        return;
+      }
+      const msg = [
+        "[audio-timing]",
+        `steps=${diagnostics.scheduledSteps}`,
+        `lookaheadMs=${diagnostics.lookaheadMs.toFixed(1)}`,
+        `aheadMs=${diagnostics.scheduleAheadTimeMs.toFixed(1)}`,
+        `wakeLateMs=${diagnostics.schedulerWakeLateMs.toFixed(2)}`,
+        `wakeLateMaxMs=${diagnostics.schedulerWakeLateMaxMs.toFixed(2)}`,
+        `stepErrMs=${diagnostics.observedStepIntervalErrorMs.toFixed(3)}`,
+        `stepErrMaxMs=${diagnostics.observedStepIntervalErrorMaxMs.toFixed(3)}`,
+      ].join(" ");
+      console.info(msg);
+    }, 2000);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [isPlaying]);
+
+  useEffect(() => {
     if (!lockToActive) {
       return;
     }
