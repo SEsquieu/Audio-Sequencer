@@ -35,6 +35,7 @@ interface SongContextValue {
   undo: () => void;
   redo: () => void;
   resetSong: () => void;
+  importSong: (song: SongState) => void;
   applySingleReplace: (path: string, value: unknown, label: string, author?: "user" | "ai") => void;
 }
 
@@ -194,6 +195,18 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
     stopAudition();
   }, [stopAudition]);
 
+  const importSong = useCallback(
+    (nextSong: SongState) => {
+      setState({
+        song: nextSong,
+        past: [],
+        future: [],
+      });
+      stopAudition();
+    },
+    [stopAudition]
+  );
+
   const applySingleReplace = useCallback(
     (path: string, value: unknown, label: string, author: "user" | "ai" = "user") => {
       const ops: JsonPatchOp[] = [{ op: "replace", path, value }];
@@ -222,6 +235,7 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
       undo,
       redo,
       resetSong,
+      importSong,
       applySingleReplace,
     }),
     [
@@ -237,6 +251,7 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
       undo,
       redo,
       resetSong,
+      importSong,
       applySingleReplace,
     ]
   );

@@ -1,5 +1,6 @@
 import {
   CSSProperties,
+  ChangeEvent,
   FormEvent,
   PointerEvent as ReactPointerEvent,
   useCallback,
@@ -242,6 +243,58 @@ interface TimelineScrollMetrics {
   viewport: number;
 }
 
+interface ExportedSongFile {
+  format: "audio-sequencer-song";
+  version: 1;
+  exportedAt: string;
+  song: SongState;
+}
+
+const isSongStateLike = (value: unknown): value is SongState => {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const candidate = value as Partial<SongState>;
+  if (
+    typeof candidate.tempo !== "number" ||
+    typeof candidate.swing !== "number" ||
+    typeof candidate.bars !== "number" ||
+    !Array.isArray(candidate.tracks)
+  ) {
+    return false;
+  }
+  return candidate.tracks.every((track) => {
+    if (!track || typeof track !== "object") {
+      return false;
+    }
+    const t = track as Partial<SongState["tracks"][number]>;
+    return (
+      typeof t.id === "string" &&
+      typeof t.name === "string" &&
+      (t.type === "synth" || t.type === "drums") &&
+      !!t.instrument &&
+      typeof t.instrument === "object" &&
+      !!t.patterns &&
+      typeof t.patterns === "object" &&
+      Array.isArray(t.lane)
+    );
+  });
+};
+
+const parseImportedSong = (value: unknown): SongState | null => {
+  if (isSongStateLike(value)) {
+    return value;
+  }
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const wrapped = value as Partial<ExportedSongFile>;
+  if (wrapped.format !== "audio-sequencer-song" || wrapped.version !== 1 || !isSongStateLike(wrapped.song)) {
+    return null;
+  }
+  return wrapped.song;
+};
+
 function App() {
   const {
     song,
@@ -256,6 +309,7 @@ function App() {
     undo,
     redo,
     resetSong,
+    importSong,
     applySingleReplace,
   } = useSong();
 
@@ -322,6 +376,7 @@ function App() {
   });
   const timelineScrubberRef = useRef<HTMLDivElement | null>(null);
   const timelineScrubPointerIdRef = useRef<number | null>(null);
+  const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const isLoopTouchDragActive = Boolean(loopDrag && loopDrag.pointerType !== "mouse");
 
   useEffect(() => {
@@ -1412,6 +1467,76 @@ function App() {
     setOctaveTransition(null);
   };
 
+  const onSaveSongToFile = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    try {
+      const payload: ExportedSongFile = {
+        format: "audio-sequencer-song",
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        song: committedSong,
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      const stamp = payload.exportedAt.replace(/[:.]/g, "-");
+      anchor.href = url;
+      anchor.download = `audio-sequencer-song-${stamp}.frog`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.warn("[song] Failed to export song file", error);
+    }
+  }, [committedSong]);
+
+  const onImportSongClick = () => {
+    importFileInputRef.current?.click();
+  };
+
+  const onImportSongFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      event.target.value = "";
+      if (!file) {
+        return;
+      }
+
+      try {
+        const parsed = JSON.parse(await file.text()) as unknown;
+        const nextSong = parseImportedSong(parsed);
+        if (!nextSong) {
+          throw new Error("Invalid song file format.");
+        }
+
+        if (engineRef.current?.playing) {
+          engineRef.current.stop();
+          setIsPlaying(false);
+        }
+
+        importSong(nextSong);
+        setSelectedTrack(0);
+        setSelectedBar(0);
+        setLockToActive(false);
+        setMutedTrackIds([]);
+        setLoopRange(null);
+        setLoopDrag(null);
+        setTrackOctaves({});
+        setTrackNoteSpanMemory({});
+        setOctaveBase(DEFAULT_OCTAVE_BASE);
+        setOctaveTransition(null);
+        setCandidates([]);
+      } catch (error) {
+        console.warn("[song] Failed to import song file", error);
+        window.alert("Could not import this file. Please choose a valid .frog or .json song export.");
+      }
+    },
+    [importSong]
+  );
+
   const onTimelineBarPointerDown = (trackIndex: number, bar: number, event: ReactPointerEvent<HTMLButtonElement>) => {
     if ((event.pointerType === "mouse" && event.button !== 0) || !loopRange) {
       return;
@@ -1759,6 +1884,28 @@ function App() {
             </button>
           </div>
           <span className="controls-divider" aria-hidden="true" />
+          <button
+            type="button"
+            className="save-song-button icon-only"
+            onClick={onSaveSongToFile}
+            aria-label="Save song to file"
+            title="Save song"
+          >
+            <span className="save-song-icon" aria-hidden="true">
+              💾
+            </span>
+          </button>
+          <button
+            type="button"
+            className="save-song-button icon-only"
+            onClick={onImportSongClick}
+            aria-label="Import song from file"
+            title="Import song"
+          >
+            <span className="save-song-icon" aria-hidden="true">
+              📂
+            </span>
+          </button>
           <button onClick={newSong}>New Song</button>
           <button
             type="button"
@@ -1784,6 +1931,13 @@ function App() {
               Sound
             </button>
           )}
+          <input
+            ref={importFileInputRef}
+            type="file"
+            accept=".frog,.json,application/json"
+            onChange={onImportSongFile}
+            style={{ display: "none" }}
+          />
         </div>
         <div className="status-row">
           <label>

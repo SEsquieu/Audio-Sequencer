@@ -67,6 +67,24 @@ select {
   padding: 0.35rem 0.7rem;
 }
 
+.save-song-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+
+.save-song-button.icon-only {
+  min-width: 0;
+  justify-content: center;
+  padding-left: 0.7rem;
+  padding-right: 0.7rem;
+}
+
+.save-song-icon {
+  font-size: 0.95em;
+  line-height: 1;
+}
+
 .control-group {
   display: inline-flex;
   gap: 0.4rem;
