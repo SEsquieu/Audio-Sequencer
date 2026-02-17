@@ -1320,18 +1320,18 @@ function App() {
                         } as CSSProperties}
                       >
                         {!octaveTransition && (
-                          <div className="step-grid octave-layer step-grid-editor">
+                          <div className="step-grid octave-layer step-grid-editor synth-editor">
                             {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
                             {renderPitchRows(pitchRows)}
                           </div>
                         )}
                         {octaveTransition && (
                           <>
-                            <div className="step-grid octave-layer old step-grid-editor">
+                            <div className="step-grid octave-layer old step-grid-editor synth-editor">
                               {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
                               {renderPitchRows(buildPitchRows(octaveTransition.from))}
                             </div>
-                            <div className="step-grid octave-layer new step-grid-editor">
+                            <div className="step-grid octave-layer new step-grid-editor synth-editor">
                               {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
                               {renderPitchRows(buildPitchRows(octaveTransition.to))}
                             </div>

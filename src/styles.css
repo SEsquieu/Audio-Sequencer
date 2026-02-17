@@ -616,6 +616,10 @@ select {
   --row-gap: 0.2rem;
 }
 
+.step-grid-editor.synth-editor {
+  --row-gap: 0rem;
+}
+
 .editor-sweep {
   position: absolute;
   top: -0.05rem;
@@ -1155,6 +1159,10 @@ select {
   .step-grid-editor {
     --row-label-width: 2.25rem;
     --row-gap: 0.16rem;
+  }
+
+  .step-grid-editor.synth-editor {
+    --row-gap: 0rem;
   }
 
   .grid-row {
