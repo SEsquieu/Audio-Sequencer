@@ -386,40 +386,93 @@ export class InstrumentEngine {
       return;
     }
 
-    const decay = Math.max(0.05, track.instrument.decay + 0.05);
-    const gain = Math.max(MIN_GAIN, velocity * track.instrument.gain);
+    const decay = Math.max(0.09, track.instrument.decay * 0.8 + 0.1);
+    const level = Math.max(MIN_GAIN, velocity * track.instrument.gain * 1.12);
+    const snap = Math.max(0, Math.min(1, track.instrument.drive * 1.1 + 0.18));
 
     const noise = context.createBufferSource();
     noise.buffer = noiseBuffer;
-    const noiseFilter = context.createBiquadFilter();
-    noiseFilter.type = "bandpass";
-    noiseFilter.frequency.setValueAtTime(1800, when);
-
+    const noiseHp = context.createBiquadFilter();
+    const noiseBp = context.createBiquadFilter();
     const noiseAmp = context.createGain();
+
+    const snapNoise = context.createBufferSource();
+    snapNoise.buffer = noiseBuffer;
+    const snapHp = context.createBiquadFilter();
+    const snapAmp = context.createGain();
+
+    const toneA = context.createOscillator();
+    const toneB = context.createOscillator();
+    const toneAmp = context.createGain();
+
+    const mix = context.createGain();
+    const drive = context.createWaveShaper();
+    const bodyEq = context.createBiquadFilter();
+    const topEq = context.createBiquadFilter();
+
+    noiseHp.type = "highpass";
+    noiseHp.frequency.setValueAtTime(700 + snap * 220, when);
+    noiseBp.type = "bandpass";
+    noiseBp.frequency.setValueAtTime(1500 + snap * 280, when);
+    noiseBp.Q.setValueAtTime(0.5, when);
     noiseAmp.gain.setValueAtTime(MIN_GAIN, when);
-    noiseAmp.gain.linearRampToValueAtTime(gain * 0.72, when + 0.0015);
+    noiseAmp.gain.linearRampToValueAtTime(level * 0.88, when + 0.001);
     noiseAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay);
 
-    const tone = context.createOscillator();
-    tone.type = "triangle";
-    tone.frequency.setValueAtTime(190, when);
+    snapHp.type = "highpass";
+    snapHp.frequency.setValueAtTime(2400 + snap * 650, when);
+    snapAmp.gain.setValueAtTime(MIN_GAIN, when);
+    snapAmp.gain.linearRampToValueAtTime(level * 0.1, when + 0.0012);
+    snapAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + Math.min(0.032, decay * 0.28));
 
-    const toneAmp = context.createGain();
+    toneA.type = "triangle";
+    toneB.type = "sine";
+    toneA.frequency.setValueAtTime(198 + snap * 18, when);
+    toneB.frequency.setValueAtTime(292 + snap * 20, when);
+    toneA.frequency.exponentialRampToValueAtTime(168, when + decay * 0.88);
+    toneB.frequency.exponentialRampToValueAtTime(244, when + decay * 0.74);
     toneAmp.gain.setValueAtTime(MIN_GAIN, when);
-    toneAmp.gain.linearRampToValueAtTime(gain * 0.33, when + 0.0015);
-    toneAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay * 0.8);
+    toneAmp.gain.linearRampToValueAtTime(level * 0.42, when + 0.0012);
+    toneAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay * 0.85);
 
-    noise.connect(noiseFilter);
-    noiseFilter.connect(noiseAmp);
-    noiseAmp.connect(output);
+    drive.curve = createDriveCurve(Math.max(0.12, Math.min(0.42, snap * 0.72))) as unknown as Float32Array<ArrayBuffer>;
+    drive.oversample = "2x";
 
-    tone.connect(toneAmp);
-    toneAmp.connect(output);
+    bodyEq.type = "peaking";
+    bodyEq.frequency.setValueAtTime(185, when);
+    bodyEq.Q.setValueAtTime(1.05, when);
+    bodyEq.gain.setValueAtTime(2.4, when);
+
+    topEq.type = "highshelf";
+    topEq.frequency.setValueAtTime(4600, when);
+    topEq.gain.setValueAtTime(0.12, when);
+
+    noise.connect(noiseHp);
+    noiseHp.connect(noiseBp);
+    noiseBp.connect(noiseAmp);
+    noiseAmp.connect(mix);
+
+    snapNoise.connect(snapHp);
+    snapHp.connect(snapAmp);
+    snapAmp.connect(mix);
+
+    toneA.connect(toneAmp);
+    toneB.connect(toneAmp);
+    toneAmp.connect(mix);
+
+    mix.connect(drive);
+    drive.connect(bodyEq);
+    bodyEq.connect(topEq);
+    topEq.connect(output);
 
     noise.start(when);
-    noise.stop(when + decay + 0.02);
-    tone.start(when);
-    tone.stop(when + decay + 0.02);
+    noise.stop(when + decay + 0.03);
+    snapNoise.start(when);
+    snapNoise.stop(when + Math.min(0.03, decay * 0.26) + 0.008);
+    toneA.start(when);
+    toneB.start(when);
+    toneA.stop(when + decay + 0.03);
+    toneB.stop(when + decay + 0.03);
   }
 
   playHat(track: Track, when: number, velocity: number): void {
@@ -433,27 +486,90 @@ export class InstrumentEngine {
       return;
     }
 
-    const source = context.createBufferSource();
-    source.buffer = noiseBuffer;
+    const decay = Math.max(0.04, 0.032 + track.instrument.decay * 0.22);
+    const level = Math.max(MIN_GAIN, velocity * track.instrument.gain * 0.9);
+    const brightness = Math.max(0, Math.min(1, track.instrument.cutoff / 10000));
+    const metal = Math.max(0, Math.min(1, track.instrument.drive * 0.9 + 0.2));
 
-    const hp = context.createBiquadFilter();
-    hp.type = "highpass";
-    hp.frequency.setValueAtTime(5200, when);
+    const noise = context.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const noiseHp = context.createBiquadFilter();
+    const noiseBp = context.createBiquadFilter();
+    const noiseAmp = context.createGain();
 
-    const amp = context.createGain();
-    amp.gain.setValueAtTime(MIN_GAIN, when);
-    amp.gain.linearRampToValueAtTime(
-      Math.max(MIN_GAIN, velocity * track.instrument.gain * 0.46),
-      when + 0.001
-    );
-    amp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + 0.04);
+    const metallicMix = context.createGain();
+    const metallicRatios = [1, 1.341, 1.666, 1.93, 2.47, 2.92];
+    const metallicOscs: OscillatorNode[] = [];
+    const metallicGains: GainNode[] = [];
+    const metallicBase = 2200 + brightness * 800;
 
-    source.connect(hp);
-    hp.connect(amp);
-    amp.connect(output);
+    for (const ratio of metallicRatios) {
+      const osc = context.createOscillator();
+      const gain = context.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(metallicBase * ratio, when);
+      gain.gain.setValueAtTime(0.05 + metal * 0.014, when);
+      osc.connect(gain);
+      gain.connect(metallicMix);
+      metallicOscs.push(osc);
+      metallicGains.push(gain);
+    }
 
-    source.start(when);
-    source.stop(when + 0.05);
+    const metallicHp = context.createBiquadFilter();
+    const metallicBp = context.createBiquadFilter();
+    const metallicAmp = context.createGain();
+    const mix = context.createGain();
+    const drive = context.createWaveShaper();
+    const air = context.createBiquadFilter();
+
+    noiseHp.type = "highpass";
+    noiseHp.frequency.setValueAtTime(4100 + brightness * 1100, when);
+    noiseBp.type = "bandpass";
+    noiseBp.frequency.setValueAtTime(6200 + brightness * 1000, when);
+    noiseBp.Q.setValueAtTime(0.45, when);
+    noiseAmp.gain.setValueAtTime(MIN_GAIN, when);
+    noiseAmp.gain.linearRampToValueAtTime(level * 0.96, when + 0.0008);
+    noiseAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay);
+
+    metallicHp.type = "highpass";
+    metallicHp.frequency.setValueAtTime(4300 + brightness * 700, when);
+    metallicBp.type = "bandpass";
+    metallicBp.frequency.setValueAtTime(7600 + brightness * 900, when);
+    metallicBp.Q.setValueAtTime(0.62, when);
+    metallicAmp.gain.setValueAtTime(MIN_GAIN, when);
+    metallicAmp.gain.linearRampToValueAtTime(level * 0.5, when + 0.0008);
+    metallicAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay * 0.92);
+
+    drive.curve = createDriveCurve(Math.max(0.1, Math.min(0.3, metal * 0.5))) as unknown as Float32Array<ArrayBuffer>;
+    drive.oversample = "2x";
+
+    air.type = "highshelf";
+    air.frequency.setValueAtTime(7800, when);
+    air.gain.setValueAtTime(0.85 + brightness * 0.95, when);
+
+    noise.connect(noiseHp);
+    noiseHp.connect(noiseBp);
+    noiseBp.connect(noiseAmp);
+    noiseAmp.connect(mix);
+
+    metallicMix.connect(metallicHp);
+    metallicHp.connect(metallicBp);
+    metallicBp.connect(metallicAmp);
+    metallicAmp.connect(mix);
+
+    mix.connect(drive);
+    drive.connect(air);
+    air.connect(output);
+
+    noise.start(when);
+    noise.stop(when + decay + 0.014);
+    for (const osc of metallicOscs) {
+      osc.start(when);
+      osc.stop(when + decay + 0.016);
+    }
+    for (const gain of metallicGains) {
+      gain.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay * 0.92);
+    }
   }
 }
 

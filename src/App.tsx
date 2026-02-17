@@ -216,6 +216,7 @@ interface OctaveScrubState {
   startY: number;
   startBase: number;
   lastStepDelta: number;
+  desktopDirect: boolean;
 }
 
 interface PianoWalkState {
@@ -1372,18 +1373,52 @@ function App() {
     [octaveBase, octaveTransition, track]
   );
 
+  const applyOctaveBaseImmediate = useCallback(
+    (target: number) => {
+      if (!track || track.type !== "synth") {
+        return;
+      }
+      const clamped = Math.max(MIN_OCTAVE_BASE, Math.min(MAX_OCTAVE_BASE, target));
+      if (octaveTransitionTimerRef.current !== null) {
+        window.clearTimeout(octaveTransitionTimerRef.current);
+        octaveTransitionTimerRef.current = null;
+      }
+      setOctaveTransition(null);
+      setOctaveBase(clamped);
+      setTrackOctaves((prev) => ({ ...prev, [track.id]: clamped }));
+    },
+    [track]
+  );
+
+  const getOctaveBaseFromPointer = useCallback((clientY: number, el: HTMLDivElement): number => {
+    const rect = el.getBoundingClientRect();
+    const range = MAX_OCTAVE_BASE - MIN_OCTAVE_BASE;
+    if (rect.height <= 0 || range <= 0) {
+      return octaveBase;
+    }
+    const y = Math.max(0, Math.min(rect.height, clientY - rect.top));
+    const ratio = y / rect.height;
+    const mapped = MAX_OCTAVE_BASE - ratio * range;
+    return Math.round(mapped);
+  }, [octaveBase]);
+
   const onOctaveScrubPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!track || track.type !== "synth") {
       return;
     }
     event.preventDefault();
     const visibleBase = octaveTransition?.to ?? octaveBase;
+    const desktopDirect = !isMobileTimelineLayout && event.pointerType === "mouse";
     octaveScrubRef.current = {
       pointerId: event.pointerId,
       startY: event.clientY,
       startBase: visibleBase,
       lastStepDelta: 0,
+      desktopDirect,
     };
+    if (desktopDirect) {
+      applyOctaveBaseImmediate(getOctaveBaseFromPointer(event.clientY, event.currentTarget));
+    }
     setOctaveScrubOffsetPx(0);
     event.currentTarget.setPointerCapture(event.pointerId);
   };
@@ -1393,15 +1428,21 @@ function App() {
     if (!drag || drag.pointerId !== event.pointerId) {
       return;
     }
-    const deltaY = event.clientY - drag.startY;
-    const stepDelta = Math.trunc(deltaY / OCTAVE_SCRUB_STEP_PX);
+    if (drag.desktopDirect) {
+      applyOctaveBaseImmediate(getOctaveBaseFromPointer(event.clientY, event.currentTarget));
+      setOctaveScrubOffsetPx(0);
+      return;
+    }
+    const directionMultiplier = isMobileTimelineLayout ? 1 : -1;
+    const adjustedDeltaY = (event.clientY - drag.startY) * directionMultiplier;
+    const stepDelta = Math.trunc(adjustedDeltaY / OCTAVE_SCRUB_STEP_PX);
     if (stepDelta === drag.lastStepDelta) {
-      const remainder = deltaY - stepDelta * OCTAVE_SCRUB_STEP_PX;
+      const remainder = adjustedDeltaY - stepDelta * OCTAVE_SCRUB_STEP_PX;
       setOctaveScrubOffsetPx(remainder);
       return;
     }
     drag.lastStepDelta = stepDelta;
-    const remainder = deltaY - stepDelta * OCTAVE_SCRUB_STEP_PX;
+    const remainder = adjustedDeltaY - stepDelta * OCTAVE_SCRUB_STEP_PX;
     setOctaveScrubOffsetPx(remainder);
     applyOctaveBase(drag.startBase + stepDelta);
   };
