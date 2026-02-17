@@ -697,17 +697,34 @@ select {
   border-radius: 0.42rem;
   background: #111827;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
   justify-items: center;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.28rem;
   padding: 0.35rem 0.24rem;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   user-select: none;
   touch-action: none;
   cursor: ns-resize;
 }
 
+.octave-scrubber-header {
+  width: 100%;
+  text-align: center;
+  font-size: 0.58rem;
+  color: #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 .octave-scrubber-range {
+  --octave-band-size: 14.285714%;
   width: 100%;
   height: 100%;
   position: relative;
@@ -716,8 +733,13 @@ select {
   background:
     repeating-linear-gradient(
       to top,
-      rgba(30, 41, 59, 0.58) 0% 16.66%,
-      rgba(51, 65, 85, 0.58) 16.66% 33.32%
+      rgba(2, 6, 23, 0) 0 calc(var(--octave-band-size) - 1px),
+      rgba(148, 163, 184, 0.22) calc(var(--octave-band-size) - 1px) var(--octave-band-size)
+    ),
+    repeating-linear-gradient(
+      to top,
+      rgba(30, 41, 59, 0.58) 0 var(--octave-band-size),
+      rgba(51, 65, 85, 0.58) var(--octave-band-size) calc(var(--octave-band-size) * 2)
     ),
     linear-gradient(180deg, rgba(2, 6, 23, 0.25), rgba(2, 6, 23, 0.15));
   box-shadow: inset 0 0 0 1px rgba(2, 6, 23, 0.35);
@@ -736,15 +758,6 @@ select {
     0 0 0 1px rgba(2, 6, 23, 0.25),
     0 0 10px rgba(34, 211, 238, 0.3);
   pointer-events: none;
-}
-
-.octave-scrubber-label {
-  writing-mode: vertical-rl;
-  transform: rotate(180deg);
-  font-size: 0.56rem;
-  color: #cbd5e1;
-  letter-spacing: 0.02em;
-  font-variant-numeric: tabular-nums;
 }
 
 .grid-row {
@@ -790,6 +803,20 @@ select {
 
 .synth-cell.note-off {
   background: transparent;
+}
+
+.grid-row.out-of-range .row-label {
+  color: transparent;
+}
+
+.grid-row.out-of-range {
+  visibility: hidden;
+}
+
+.hidden-cell {
+  border-color: transparent;
+  background: transparent;
+  pointer-events: none;
 }
 
 .synth-cell.note-single {

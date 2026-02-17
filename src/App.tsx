@@ -19,6 +19,8 @@ import { JsonPatchOp, PatchMeta, SongState, SynthStep, Track, TrackType, Wavefor
 
 const MIN_OCTAVE_BASE = 24;
 const MAX_OCTAVE_BASE = 96;
+const MIN_VISIBLE_PITCH = 24; // C1
+const MAX_VISIBLE_PITCH = 107; // B7
 const DEFAULT_OCTAVE_BASE = 60;
 const BASS_OCTAVE_BASE = 36;
 const OCTAVE_SCRUB_STEP_PX = 16;
@@ -42,6 +44,7 @@ const getPitchClass = (pitch: number) => ((pitch % 12) + 12) % 12;
 const isBlackKey = (pitch: number) => [1, 3, 6, 8, 10].includes(getPitchClass(pitch));
 const toNoteName = (pitch: number) => noteNames[getPitchClass(pitch)];
 const toNoteWithOctave = (pitch: number) => `${toNoteName(pitch)}${Math.floor(pitch / 12) - 1}`;
+const isPitchInEditableRange = (pitch: number) => pitch >= MIN_VISIBLE_PITCH && pitch <= MAX_VISIBLE_PITCH;
 
 const normalizeSynthCell = (cell: unknown): SynthStep[] => {
   if (!cell) {
@@ -375,21 +378,15 @@ function App() {
     [track]
   );
   const buildPitchRows = useCallback((base: number) => {
-    const rows: Array<{ pitch: number; ghost: boolean }> = [];
+    const rows: Array<{ pitch: number; ghost: boolean; inRange: boolean }> = [];
     for (let pitch = base + 13; pitch >= base + 12; pitch -= 1) {
-      if (pitch >= 0 && pitch <= 127) {
-        rows.push({ pitch, ghost: true });
-      }
+      rows.push({ pitch, ghost: true, inRange: isPitchInEditableRange(pitch) });
     }
     for (let pitch = base + 11; pitch >= base; pitch -= 1) {
-      if (pitch >= 0 && pitch <= 127) {
-        rows.push({ pitch, ghost: false });
-      }
+      rows.push({ pitch, ghost: false, inRange: isPitchInEditableRange(pitch) });
     }
     for (let pitch = base - 1; pitch >= base - 2; pitch -= 1) {
-      if (pitch >= 0 && pitch <= 127) {
-        rows.push({ pitch, ghost: true });
-      }
+      rows.push({ pitch, ghost: true, inRange: isPitchInEditableRange(pitch) });
     }
     return rows;
   }, []);
@@ -531,7 +528,7 @@ function App() {
   };
 
   const onToggleSynthCell = (stepIndex: number, pitch: number) => {
-    if (!track || track.type !== "synth" || !patternId) {
+    if (!track || track.type !== "synth" || !patternId || !isPitchInEditableRange(pitch)) {
       return;
     }
 
@@ -593,7 +590,7 @@ function App() {
   };
 
   const onSetSynthNoteLength = (startStep: number, endStep: number, pitch: number) => {
-    if (!track || track.type !== "synth" || !patternId) {
+    if (!track || track.type !== "synth" || !patternId || !isPitchInEditableRange(pitch)) {
       return;
     }
 
@@ -676,7 +673,12 @@ function App() {
   };
 
   const onSynthPointerDown = (stepIndex: number, pitch: number, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if ((event.pointerType === "mouse" && event.button !== 0) || !track || track.type !== "synth") {
+    if (
+      (event.pointerType === "mouse" && event.button !== 0) ||
+      !track ||
+      track.type !== "synth" ||
+      !isPitchInEditableRange(pitch)
+    ) {
       return;
     }
     event.preventDefault();
@@ -722,7 +724,7 @@ function App() {
   };
 
   const onSynthPointerEnter = (stepIndex: number, pitch: number, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if ((event.buttons & 1) !== 1) {
+    if ((event.buttons & 1) !== 1 || !isPitchInEditableRange(pitch)) {
       return;
     }
     setSynthDrag((prev) => {
@@ -1145,14 +1147,15 @@ function App() {
     }
   };
 
-  const renderPitchRows = (rows: Array<{ pitch: number; ghost: boolean }>) =>
-    rows.map(({ pitch, ghost }) => (
+  const renderPitchRows = (rows: Array<{ pitch: number; ghost: boolean; inRange: boolean }>) =>
+    rows.map(({ pitch, ghost, inRange }) => (
       <div
         key={pitch}
         className={[
           "grid-row",
           "synth-row",
           ghost ? "ghost-row" : "",
+          !inRange ? "out-of-range" : "",
           getPitchClass(pitch) === 0
             ? "key-c"
             : getPitchClass(pitch) === 7
@@ -1162,8 +1165,11 @@ function App() {
                 : "key-white",
         ].join(" ")}
       >
-        <span className="row-label">{toNoteName(pitch)}</span>
+        <span className="row-label">{inRange ? toNoteName(pitch) : ""}</span>
         {Array.from({ length: 16 }, (_, step) => {
+          if (!inRange) {
+            return <span key={`${pitch}-${step}`} className="step-cell synth-cell hidden-cell" aria-hidden="true" />;
+          }
           const previewEnd = synthDrag ? Math.max(synthDrag.startStep, synthDrag.endStep) : -1;
           const isDragPreviewOn =
             Boolean(synthDrag) &&
@@ -1349,6 +1355,9 @@ function App() {
                           octaveBase + 11
                         )}`}
                       >
+                        <div className="octave-scrubber-header">
+                          {toNoteWithOctave(octaveBase)}-{toNoteWithOctave(octaveBase + 11)}
+                        </div>
                         <div
                           className="octave-scrubber-range"
                           style={
@@ -1361,9 +1370,6 @@ function App() {
                           }
                         >
                           <div className="octave-scrubber-window" />
-                        </div>
-                        <div className="octave-scrubber-label">
-                          {toNoteWithOctave(octaveBase)}-{toNoteWithOctave(octaveBase + 11)}
                         </div>
                       </div>
                     </div>
