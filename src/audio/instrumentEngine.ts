@@ -295,32 +295,84 @@ export class InstrumentEngine {
 
   playKick(track: Track, when: number, velocity: number): void {
     const context = this.getContext();
+    const noiseBuffer = this.getNoiseBuffer();
     if (!context) {
       return;
     }
     const output = this.getTrackOutputNode(track.id);
-    if (!output) {
+    if (!output || !noiseBuffer) {
       return;
     }
 
-    const osc = context.createOscillator();
-    const amp = context.createGain();
-    const decay = Math.max(0.03, track.instrument.decay + 0.03);
-    const level = Math.max(MIN_GAIN, velocity * track.instrument.gain);
+    const body = context.createOscillator();
+    const bodyAmp = context.createGain();
+    const transientNoise = context.createBufferSource();
+    const transientFilter = context.createBiquadFilter();
+    const transientAmp = context.createGain();
+    const transientTone = context.createOscillator();
+    const transientToneAmp = context.createGain();
+    const mix = context.createGain();
+    const drive = context.createWaveShaper();
+    const tone = context.createBiquadFilter();
 
-    osc.type = "sine";
-    osc.frequency.setValueAtTime(160, when);
-    osc.frequency.exponentialRampToValueAtTime(50, when + decay);
+    const decay = Math.max(0.08, track.instrument.decay * 0.75 + 0.08);
+    const level = Math.max(MIN_GAIN, velocity * track.instrument.gain * 1.35);
+    const punch = Math.max(0, Math.min(1, track.instrument.drive * 1.15 + 0.2));
+    const startFreq = 178 + punch * 32;
+    const endFreq = 45 + punch * 8;
+    const transientEnd = when + Math.min(0.022, decay * 0.24);
 
-    amp.gain.setValueAtTime(MIN_GAIN, when);
-    amp.gain.linearRampToValueAtTime(level, when + 0.0015);
-    amp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay);
+    body.type = "sine";
+    body.frequency.setValueAtTime(startFreq, when);
+    body.frequency.exponentialRampToValueAtTime(endFreq, when + decay * 0.95);
 
-    osc.connect(amp);
-    amp.connect(output);
+    bodyAmp.gain.setValueAtTime(MIN_GAIN, when);
+    bodyAmp.gain.linearRampToValueAtTime(level, when + 0.0016);
+    bodyAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay);
 
-    osc.start(when);
-    osc.stop(when + decay + 0.02);
+    transientNoise.buffer = noiseBuffer;
+    transientFilter.type = "bandpass";
+    transientFilter.frequency.setValueAtTime(1850, when);
+    transientFilter.Q.setValueAtTime(0.9, when);
+    transientAmp.gain.setValueAtTime(MIN_GAIN, when);
+    transientAmp.gain.linearRampToValueAtTime(level * 0.24, when + 0.001);
+    transientAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, transientEnd);
+
+    transientTone.type = "triangle";
+    transientTone.frequency.setValueAtTime(780, when);
+    transientTone.frequency.exponentialRampToValueAtTime(180, transientEnd);
+    transientToneAmp.gain.setValueAtTime(MIN_GAIN, when);
+    transientToneAmp.gain.linearRampToValueAtTime(level * 0.18, when + 0.0008);
+    transientToneAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, transientEnd);
+
+    drive.curve = createDriveCurve(Math.max(0.15, Math.min(0.65, punch))) as unknown as Float32Array<ArrayBuffer>;
+    drive.oversample = "2x";
+
+    tone.type = "lowpass";
+    tone.frequency.setValueAtTime(2200, when);
+    tone.Q.setValueAtTime(0.15, when);
+
+    body.connect(bodyAmp);
+    bodyAmp.connect(mix);
+
+    transientNoise.connect(transientFilter);
+    transientFilter.connect(transientAmp);
+    transientAmp.connect(mix);
+
+    transientTone.connect(transientToneAmp);
+    transientToneAmp.connect(mix);
+
+    mix.connect(drive);
+    drive.connect(tone);
+    tone.connect(output);
+
+    body.start(when);
+    transientNoise.start(when);
+    transientTone.start(when);
+
+    body.stop(when + decay + 0.035);
+    transientNoise.stop(transientEnd + 0.006);
+    transientTone.stop(transientEnd + 0.006);
   }
 
   playSnare(track: Track, when: number, velocity: number): void {
@@ -345,7 +397,7 @@ export class InstrumentEngine {
 
     const noiseAmp = context.createGain();
     noiseAmp.gain.setValueAtTime(MIN_GAIN, when);
-    noiseAmp.gain.linearRampToValueAtTime(gain * 0.6, when + 0.0015);
+    noiseAmp.gain.linearRampToValueAtTime(gain * 0.72, when + 0.0015);
     noiseAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay);
 
     const tone = context.createOscillator();
@@ -354,7 +406,7 @@ export class InstrumentEngine {
 
     const toneAmp = context.createGain();
     toneAmp.gain.setValueAtTime(MIN_GAIN, when);
-    toneAmp.gain.linearRampToValueAtTime(gain * 0.25, when + 0.0015);
+    toneAmp.gain.linearRampToValueAtTime(gain * 0.33, when + 0.0015);
     toneAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + decay * 0.8);
 
     noise.connect(noiseFilter);
@@ -391,7 +443,7 @@ export class InstrumentEngine {
     const amp = context.createGain();
     amp.gain.setValueAtTime(MIN_GAIN, when);
     amp.gain.linearRampToValueAtTime(
-      Math.max(MIN_GAIN, velocity * track.instrument.gain * 0.35),
+      Math.max(MIN_GAIN, velocity * track.instrument.gain * 0.46),
       when + 0.001
     );
     amp.gain.exponentialRampToValueAtTime(MIN_GAIN, when + 0.04);
