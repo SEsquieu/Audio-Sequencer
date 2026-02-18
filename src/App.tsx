@@ -2569,6 +2569,14 @@ function App() {
           <button className="mobile-hide" onClick={newSong}>New Song</button>
           <button
             type="button"
+            className="mobile-new-song-inline"
+            onClick={newSong}
+            aria-label="Start a new song"
+          >
+            New Song
+          </button>
+          <button
+            type="button"
             className="ai-dock-button"
             onClick={() => {
               setIsSoundOpen(false);
@@ -2585,11 +2593,6 @@ function App() {
             onChange={onImportSongFile}
             style={{ display: "none" }}
           />
-        </div>
-        <div className="mobile-new-song-row">
-          <button type="button" onClick={newSong} aria-label="Start a new song">
-            New Song
-          </button>
         </div>
         <div className="status-row">
           <label>

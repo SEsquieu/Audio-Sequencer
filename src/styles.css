@@ -73,6 +73,10 @@ select {
   display: none;
 }
 
+.mobile-new-song-inline {
+  display: none;
+}
+
 .save-song-button {
   display: inline-flex;
   align-items: center;
@@ -1508,8 +1512,22 @@ select {
     display: none;
   }
 
-  .ai-dock-button {
+  .mobile-new-song-inline {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     margin-left: auto;
+    border: 1px solid #475569;
+    background: #111827;
+    color: #e2e8f0;
+    border-radius: 0.4rem;
+    min-height: 1.26rem;
+    padding: 0.08rem 0.3rem;
+    font-size: 0.66rem;
+  }
+
+  .ai-dock-button {
+    margin-left: 0;
   }
 
   .status-row {
@@ -1518,19 +1536,7 @@ select {
   }
 
   .mobile-new-song-row {
-    display: flex;
-    justify-content: flex-end;
-    padding-top: 0.02rem;
-  }
-
-  .mobile-new-song-row button {
-    border: 1px solid #475569;
-    background: #111827;
-    color: #e2e8f0;
-    border-radius: 0.4rem;
-    min-height: 1.26rem;
-    padding: 0.08rem 0.3rem;
-    font-size: 0.66rem;
+    display: none;
   }
 
   .status-row .master-volume,
