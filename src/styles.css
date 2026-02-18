@@ -1397,10 +1397,6 @@ select {
     display: none;
   }
 
-  .top-controls .controls-divider {
-    display: none;
-  }
-
   .ai-dock-button {
     margin-left: auto;
   }

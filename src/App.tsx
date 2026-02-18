@@ -2234,8 +2234,8 @@ function App() {
               ⏹
             </button>
           </div>
-          <span className="controls-divider mobile-hide" aria-hidden="true" />
-          <div className="control-group history-group mobile-hide">
+          <span className="controls-divider" aria-hidden="true" />
+          <div className="control-group history-group">
             <button onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo">
               ↶
             </button>
@@ -2243,10 +2243,10 @@ function App() {
               ↷
             </button>
           </div>
-          <span className="controls-divider mobile-hide" aria-hidden="true" />
+          <span className="controls-divider" aria-hidden="true" />
           <button
             type="button"
-            className="save-song-button icon-only mobile-hide"
+            className="save-song-button icon-only"
             onClick={onSaveSongToFile}
             aria-label="Save song to file"
             title="Save song"
@@ -2257,7 +2257,7 @@ function App() {
           </button>
           <button
             type="button"
-            className="save-song-button icon-only mobile-hide"
+            className="save-song-button icon-only"
             onClick={onImportSongClick}
             aria-label="Import song from file"
             title="Import song"
