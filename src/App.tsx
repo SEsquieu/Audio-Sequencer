@@ -2199,6 +2199,38 @@ function App() {
               ⏹
             </button>
           </div>
+          <label className="tempo-compact mobile-portrait-only">
+            Tempo
+            <input
+              className="tempo-value-input"
+              type="number"
+              min={70}
+              max={180}
+              step={1}
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={tempoDraft}
+              onFocus={() => setIsTempoFieldFocused(true)}
+              onChange={(e) => setTempoDraft(e.target.value)}
+              onBlur={() => {
+                setIsTempoFieldFocused(false);
+                commitTempoDraft();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  (e.currentTarget as HTMLInputElement).blur();
+                  return;
+                }
+                if (e.key === "Escape") {
+                  e.preventDefault();
+                  setTempoDraft(String(song.tempo));
+                  (e.currentTarget as HTMLInputElement).blur();
+                }
+              }}
+              aria-label="Tempo BPM"
+            />
+          </label>
           <span className="controls-divider" aria-hidden="true" />
           <div className="control-group history-group">
             <button onClick={undo} disabled={!canUndo} aria-label="Undo" title="Undo">

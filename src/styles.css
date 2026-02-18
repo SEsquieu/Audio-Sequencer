@@ -91,6 +91,17 @@ select {
   align-items: center;
 }
 
+.mobile-portrait-only {
+  display: none;
+}
+
+.tempo-compact {
+  align-items: center;
+  gap: 0.2rem;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
 .controls-divider {
   width: 1px;
   height: 1.7rem;
@@ -1663,15 +1674,19 @@ select {
   }
 
   .status-row {
-    gap: 0.04rem;
-    font-size: 0.54rem;
+    display: none;
   }
 
-  .status-row label {
-    gap: 0.08rem;
+  .mobile-portrait-only {
+    display: inline-flex;
   }
 
-  .tempo-value-input {
+  .tempo-compact {
+    gap: 0.14rem;
+    font-size: 0.58rem;
+  }
+
+  .tempo-compact .tempo-value-input {
     width: 1.95rem;
     min-width: 1.95rem;
     padding: 0.01rem 0.1rem;
