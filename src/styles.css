@@ -1403,6 +1403,12 @@ select {
 }
 
 @media (max-width: 899px) {
+  .panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
   .topbar {
     padding: 0.2rem 0.4rem;
     gap: 0.08rem;
@@ -1469,6 +1475,7 @@ select {
   .workspace {
     gap: 0;
     height: auto;
+    flex: 0 0 auto;
   }
 
   .main-view {
@@ -1511,8 +1518,10 @@ select {
   .timeline-dock {
     border-top: 0;
     padding: 0 0.5rem 0.4rem;
-    height: clamp(6.8rem, 29dvh, 9.4rem);
-    max-height: 31dvh;
+    height: auto;
+    max-height: none;
+    min-height: 8.5rem;
+    flex: 1 1 auto;
   }
 
   .timeline-mobile-strip {
