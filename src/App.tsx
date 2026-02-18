@@ -33,6 +33,8 @@ const TIMELINE_ROW_GAP_REM_MOBILE = 0.35;
 const TIMELINE_BAR_INNER_PAD_REM = 0.2;
 const TIMELINE_BAR_WIDTH_REM = 2.15;
 const TIMELINE_BAR_GAP_REM = 0.3;
+const TIMELINE_BAR_LONG_PRESS_MS = 420;
+const TIMELINE_BAR_LONG_PRESS_MOVE_PX = 10;
 
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const deepClone = <T,>(value: T): T => {
@@ -243,6 +245,13 @@ interface TimelineScrollMetrics {
   viewport: number;
 }
 
+interface TimelineBarActionState {
+  trackIndex: number;
+  bar: number;
+  clientX: number;
+  clientY: number;
+}
+
 interface ExportedSongFile {
   format: "audio-sequencer-song";
   version: 1;
@@ -342,6 +351,7 @@ function App() {
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
   const [trackNoteSpanMemory, setTrackNoteSpanMemory] = useState<Record<string, number>>({});
   const [mobileTimelineControlsOpen, setMobileTimelineControlsOpen] = useState(false);
+  const [timelineBarAction, setTimelineBarAction] = useState<TimelineBarActionState | null>(null);
   const [tempoDraft, setTempoDraft] = useState(() => String(song.tempo));
   const [isTempoFieldFocused, setIsTempoFieldFocused] = useState(false);
   const [isMobileTimelineLayout, setIsMobileTimelineLayout] = useState<boolean>(() => {
@@ -377,6 +387,14 @@ function App() {
   const timelineScrubberRef = useRef<HTMLDivElement | null>(null);
   const timelineScrubPointerIdRef = useRef<number | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
+  const timelineBarLongPressRef = useRef<{
+    pointerId: number;
+    trackIndex: number;
+    bar: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
+  const timelineBarLongPressTimerRef = useRef<number | null>(null);
   const isLoopTouchDragActive = Boolean(loopDrag && loopDrag.pointerType !== "mouse");
 
   useEffect(() => {
@@ -1497,6 +1515,34 @@ function App() {
     importFileInputRef.current?.click();
   };
 
+  const clearTimelineBarLongPressTimer = useCallback(() => {
+    if (timelineBarLongPressTimerRef.current === null) {
+      return;
+    }
+    window.clearTimeout(timelineBarLongPressTimerRef.current);
+    timelineBarLongPressTimerRef.current = null;
+  }, []);
+
+  const cancelTimelineBarLongPress = useCallback(() => {
+    timelineBarLongPressRef.current = null;
+    clearTimelineBarLongPressTimer();
+  }, [clearTimelineBarLongPressTimer]);
+
+  const toggleSingleBarLoop = useCallback(
+    (trackIndex: number, bar: number) => {
+      setSelectedTrack(trackIndex);
+      if (!lockToActive) {
+        setSelectedBar(bar);
+      }
+      setLoopRange((prev) =>
+        prev && prev.start === bar && prev.end === bar
+          ? null
+          : { start: bar, end: bar }
+      );
+    },
+    [lockToActive]
+  );
+
   const onImportSongFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -1538,6 +1584,37 @@ function App() {
   );
 
   const onTimelineBarPointerDown = (trackIndex: number, bar: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (event.pointerType !== "mouse") {
+      timelineBarLongPressRef.current = {
+        pointerId: event.pointerId,
+        trackIndex,
+        bar,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
+      clearTimelineBarLongPressTimer();
+      timelineBarLongPressTimerRef.current = window.setTimeout(() => {
+        const pending = timelineBarLongPressRef.current;
+        if (!pending || pending.pointerId !== event.pointerId) {
+          return;
+        }
+        suppressBarClickRef.current = true;
+        setSelectedTrack(trackIndex);
+        if (!lockToActive) {
+          setSelectedBar(bar);
+        }
+        setLoopDrag(null);
+        setTimelineBarAction({
+          trackIndex: pending.trackIndex,
+          bar: pending.bar,
+          clientX: pending.startX,
+          clientY: pending.startY,
+        });
+        timelineBarLongPressRef.current = null;
+        timelineBarLongPressTimerRef.current = null;
+      }, TIMELINE_BAR_LONG_PRESS_MS);
+    }
+
     if ((event.pointerType === "mouse" && event.button !== 0) || !loopRange) {
       return;
     }
@@ -1655,6 +1732,38 @@ function App() {
       window.removeEventListener("pointercancel", finishDrag);
     };
   }, [extendLoopRangeToBar, getBarIndexFromClientX, loopDrag]);
+
+  useEffect(() => {
+    const onPointerMove = (event: PointerEvent) => {
+      const pending = timelineBarLongPressRef.current;
+      if (!pending || pending.pointerId !== event.pointerId) {
+        return;
+      }
+      const moved =
+        Math.abs(event.clientX - pending.startX) > TIMELINE_BAR_LONG_PRESS_MOVE_PX ||
+        Math.abs(event.clientY - pending.startY) > TIMELINE_BAR_LONG_PRESS_MOVE_PX;
+      if (moved) {
+        cancelTimelineBarLongPress();
+      }
+    };
+    const onPointerDone = (event: PointerEvent) => {
+      const pending = timelineBarLongPressRef.current;
+      if (!pending || pending.pointerId !== event.pointerId) {
+        return;
+      }
+      cancelTimelineBarLongPress();
+    };
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerup", onPointerDone);
+    window.addEventListener("pointercancel", onPointerDone);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerDone);
+      window.removeEventListener("pointercancel", onPointerDone);
+    };
+  }, [cancelTimelineBarLongPress]);
+
+  useEffect(() => () => clearTimelineBarLongPressTimer(), [clearTimelineBarLongPressTimer]);
 
   const applyOctaveBase = useCallback(
     (target: number) => {
@@ -2277,196 +2386,250 @@ function App() {
         </div>
       </main>
 
-      <section className="timeline-dock" aria-label="Timeline">
-        {track && (
-          <>
-            {isMobileTimelineLayout && (
-              <div className="timeline-mobile-strip">
-                <span>
-                  Bar <strong>{selectedBar + 1}</strong> • Pattern <strong>{patternSelectValue}</strong>
-                </span>
-                <button
-                  type="button"
-                  className="timeline-toggle-button"
-                  onClick={() => setMobileTimelineControlsOpen((prev) => !prev)}
-                  aria-expanded={mobileTimelineControlsOpen}
-                >
-                  {mobileTimelineControlsOpen ? "Hide Controls" : "Show Controls"}
-                </button>
-              </div>
-            )}
-            {(!isMobileTimelineLayout || mobileTimelineControlsOpen) && (
-              <div className="timeline-controls">
-                <div className="timeline-controls-left">
+      <section
+        className={["timeline-dock", timelineBarAction ? "bar-action-mode" : ""].join(" ")}
+        aria-label="Timeline"
+      >
+        <div className="timeline-content">
+          {track && (
+            <>
+              {isMobileTimelineLayout && (
+                <div className="timeline-mobile-strip">
                   <span>
-                    Bar: <strong>{selectedBar + 1}</strong>
+                    Bar <strong>{selectedBar + 1}</strong> • Pattern <strong>{patternSelectValue}</strong>
                   </span>
-                  <label>
-                    Pattern
-                    <select value={patternSelectValue} onChange={(e) => assignPatternToBar(e.target.value)}>
-                      <option value="__unassigned" disabled>
-                        Unassigned
-                      </option>
-                      {trackPatternIds.map((id) => (
-                        <option key={id} value={id}>
-                          {id}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <button type="button" onClick={createPatternForBar}>
-                    New Pattern
-                  </button>
-                  <button type="button" onClick={() => addBars(4)}>
-                    Add 4 Bars
-                  </button>
-                  {loopRange !== null && (
-                    <button type="button" onClick={() => setLoopRange(null)}>
-                      Clear Loop (Bars {loopRange.start + 1}-{loopRange.end + 1})
-                    </button>
-                  )}
-                </div>
-                <div className="timeline-controls-center">
                   <button
                     type="button"
-                    className={lockToActive ? "lock-active-button on" : "lock-active-button"}
-                    onClick={() => setLockToActive((prev) => !prev)}
-                    aria-pressed={lockToActive}
-                    title="Lock editor to currently playing bar"
+                    className="timeline-toggle-button"
+                    onClick={() => setMobileTimelineControlsOpen((prev) => !prev)}
+                    aria-expanded={mobileTimelineControlsOpen}
                   >
-                    {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
+                    {mobileTimelineControlsOpen ? "Hide Controls" : "Show Controls"}
                   </button>
                 </div>
-                <div className="timeline-controls-right">
-                  <button type="button" onClick={() => addTrack("synth")}>
-                    Add Synth Track
+              )}
+              {(!isMobileTimelineLayout || mobileTimelineControlsOpen) && (
+                <div className="timeline-controls">
+                  <div className="timeline-controls-left">
+                    <span>
+                      Bar: <strong>{selectedBar + 1}</strong>
+                    </span>
+                    <label>
+                      Pattern
+                      <select value={patternSelectValue} onChange={(e) => assignPatternToBar(e.target.value)}>
+                        <option value="__unassigned" disabled>
+                          Unassigned
+                        </option>
+                        {trackPatternIds.map((id) => (
+                          <option key={id} value={id}>
+                            {id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button type="button" onClick={createPatternForBar}>
+                      New Pattern
+                    </button>
+                    <button type="button" onClick={() => addBars(4)}>
+                      Add 4 Bars
+                    </button>
+                    {loopRange !== null && (
+                      <button type="button" onClick={() => setLoopRange(null)}>
+                        Clear Loop (Bars {loopRange.start + 1}-{loopRange.end + 1})
+                      </button>
+                    )}
+                  </div>
+                  <div className="timeline-controls-center">
+                    <button
+                      type="button"
+                      className={lockToActive ? "lock-active-button on" : "lock-active-button"}
+                      onClick={() => setLockToActive((prev) => !prev)}
+                      aria-pressed={lockToActive}
+                      title="Lock editor to currently playing bar"
+                    >
+                      {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
+                    </button>
+                  </div>
+                  <div className="timeline-controls-right">
+                    <button type="button" onClick={() => addTrack("synth")}>
+                      Add Synth Track
+                    </button>
+                    <button type="button" onClick={() => addTrack("drums")}>
+                      Add Drums Track
+                    </button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+
+          <div className="timeline-radial-shell">
+            <div
+              ref={timelineScrubberRef}
+              className="timeline-radial-scrubber"
+              onPointerDown={onTimelineScrubberPointerDown}
+              onPointerMove={onTimelineScrubberPointerMove}
+              onPointerUp={onTimelineScrubberPointerEnd}
+              onPointerCancel={onTimelineScrubberPointerEnd}
+              role="slider"
+              aria-label="Timeline scroll"
+              aria-valuemin={0}
+              aria-valuemax={Math.round(timelineScrollMetrics.max)}
+              aria-valuenow={Math.round(timelineScrollLeft)}
+            >
+              <div
+                className="timeline-radial-window"
+                style={
+                  {
+                    "--timeline-window-left": `${timelineWindowLeftPercent}%`,
+                    "--timeline-window-width": `${timelineWindowWidthPercent}%`,
+                  } as CSSProperties
+                }
+              />
+            </div>
+          </div>
+
+          <div className="timeline-rows-wrap">
+            <div
+              className="timeline-global-sweep"
+              style={{ left: `calc(${globalSweepLeftRem}rem - ${timelineScrollLeft}px)` }}
+              aria-hidden="true"
+            />
+            {song.tracks.map((t, trackIndex) => (
+              <div
+                key={t.id}
+                className={mutedTrackIds.includes(t.id) ? "timeline-row muted" : "timeline-row"}
+              >
+                <div className={safeTrackIndex === trackIndex ? "timeline-track-label active" : "timeline-track-label"}>
+                  <button
+                    type="button"
+                    className={mutedTrackIds.includes(t.id) ? "mute-toggle muted" : "mute-toggle"}
+                    onClick={() => toggleTrackMute(t.id)}
+                    aria-label={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
+                    title={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
+                  >
+                    {mutedTrackIds.includes(t.id) ? "🔇" : "🔊"}
                   </button>
-                  <button type="button" onClick={() => addTrack("drums")}>
-                    Add Drums Track
-                  </button>
+                  {t.name}
+                </div>
+                <div
+                  className="bar-grid"
+                  ref={(el) => {
+                    timelineRowRefs.current[trackIndex] = el;
+                    if (trackIndex === 0) {
+                      updateTimelineScrollMetrics(el);
+                    }
+                  }}
+                  onScroll={(event) => {
+                    updateTimelineScrollMetrics(event.currentTarget);
+                    syncTimelineScroll(trackIndex, event.currentTarget.scrollLeft);
+                  }}
+                >
+                  <div
+                    className="bar-grid-inner"
+                    style={{
+                      gridTemplateColumns: `repeat(${song.bars}, 2.15rem)`,
+                    }}
+                  >
+                  <div
+                    className="timeline-loop-region"
+                    style={{
+                      width: `${loopRegionPercent}%`,
+                      left: `calc(0.2rem + ${loopRegionLeftPercent}%)`,
+                    }}
+                    aria-hidden="true"
+                  />
+                  {barOptions.map((bar) => (
+                    <button
+                      key={`${t.id}-${bar}`}
+                      className={[
+                        "bar-cell",
+                        selectedBar === bar && safeTrackIndex === trackIndex ? "active" : "",
+                        loopRange && bar >= loopRange.start && bar <= loopRange.end ? "looped" : "",
+                      ].join(" ")}
+                      onClick={() => {
+                        if (suppressBarClickRef.current) {
+                          suppressBarClickRef.current = false;
+                          return;
+                        }
+                        setSelectedTrack(trackIndex);
+                        if (!lockToActive) {
+                          setSelectedBar(bar);
+                        }
+                      }}
+                      onDoubleClick={() => {
+                        toggleSingleBarLoop(trackIndex, bar);
+                      }}
+                      onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
+                      onPointerEnter={(event) => onTimelineBarPointerEnter(bar, event)}
+                      data-bar-index={bar}
+                    >
+                      {t.lane[bar]}
+                    </button>
+                  ))}
+                  </div>
                 </div>
               </div>
-            )}
-          </>
-        )}
-
-        <div className="timeline-radial-shell">
-          <div
-            ref={timelineScrubberRef}
-            className="timeline-radial-scrubber"
-            onPointerDown={onTimelineScrubberPointerDown}
-            onPointerMove={onTimelineScrubberPointerMove}
-            onPointerUp={onTimelineScrubberPointerEnd}
-            onPointerCancel={onTimelineScrubberPointerEnd}
-            role="slider"
-            aria-label="Timeline scroll"
-            aria-valuemin={0}
-            aria-valuemax={Math.round(timelineScrollMetrics.max)}
-            aria-valuenow={Math.round(timelineScrollLeft)}
-          >
-            <div
-              className="timeline-radial-window"
-              style={
-                {
-                  "--timeline-window-left": `${timelineWindowLeftPercent}%`,
-                  "--timeline-window-width": `${timelineWindowWidthPercent}%`,
-                } as CSSProperties
-              }
-            />
+            ))}
           </div>
         </div>
 
-        <div className="timeline-rows-wrap">
-          <div
-            className="timeline-global-sweep"
-            style={{ left: `calc(${globalSweepLeftRem}rem - ${timelineScrollLeft}px)` }}
-            aria-hidden="true"
-          />
-          {song.tracks.map((t, trackIndex) => (
+        {timelineBarAction && (
+          <>
+            <button
+              type="button"
+              className="timeline-bar-action-backdrop"
+              onClick={() => setTimelineBarAction(null)}
+              aria-label="Dismiss timeline actions"
+            />
             <div
-              key={t.id}
-              className={mutedTrackIds.includes(t.id) ? "timeline-row muted" : "timeline-row"}
+              className="timeline-bar-action-bubbles"
+              style={
+                {
+                  "--timeline-action-x": `${timelineBarAction.clientX}px`,
+                  "--timeline-action-y": `${timelineBarAction.clientY}px`,
+                } as CSSProperties
+              }
+              role="dialog"
+              aria-label="Pattern controls"
             >
-              <div className={safeTrackIndex === trackIndex ? "timeline-track-label active" : "timeline-track-label"}>
-                <button
-                  type="button"
-                  className={mutedTrackIds.includes(t.id) ? "mute-toggle muted" : "mute-toggle"}
-                  onClick={() => toggleTrackMute(t.id)}
-                  aria-label={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
-                  title={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
-                >
-                  {mutedTrackIds.includes(t.id) ? "🔇" : "🔊"}
-                </button>
-                {t.name}
-              </div>
-              <div
-                className="bar-grid"
-                ref={(el) => {
-                  timelineRowRefs.current[trackIndex] = el;
-                  if (trackIndex === 0) {
-                    updateTimelineScrollMetrics(el);
-                  }
-                }}
-                onScroll={(event) => {
-                  updateTimelineScrollMetrics(event.currentTarget);
-                  syncTimelineScroll(trackIndex, event.currentTarget.scrollLeft);
+              <button
+                type="button"
+                disabled={
+                  (() => {
+                    const actionTrack = song.tracks[timelineBarAction.trackIndex];
+                    if (!actionTrack) {
+                      return true;
+                    }
+                    const actionPatternId = actionTrack.lane[timelineBarAction.bar] ?? "0";
+                    return actionPatternId === "0" || !actionTrack.patterns[actionPatternId];
+                  })()
+                }
+                onClick={() => setTimelineBarAction(null)}
+              >
+                Dupe
+              </button>
+              <button type="button" onClick={() => setTimelineBarAction(null)}>
+                New
+              </button>
+              <button type="button" onClick={() => setTimelineBarAction(null)}>
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  toggleSingleBarLoop(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
                 }}
               >
-                <div
-                  className="bar-grid-inner"
-                  style={{
-                    gridTemplateColumns: `repeat(${song.bars}, 2.15rem)`,
-                  }}
-                >
-                <div
-                  className="timeline-loop-region"
-                  style={{
-                    width: `${loopRegionPercent}%`,
-                    left: `calc(0.2rem + ${loopRegionLeftPercent}%)`,
-                  }}
-                  aria-hidden="true"
-                />
-                {barOptions.map((bar) => (
-                  <button
-                    key={`${t.id}-${bar}`}
-                    className={[
-                      "bar-cell",
-                      selectedBar === bar && safeTrackIndex === trackIndex ? "active" : "",
-                      loopRange && bar >= loopRange.start && bar <= loopRange.end ? "looped" : "",
-                    ].join(" ")}
-                    onClick={() => {
-                      if (suppressBarClickRef.current) {
-                        suppressBarClickRef.current = false;
-                        return;
-                      }
-                      setSelectedTrack(trackIndex);
-                      if (!lockToActive) {
-                        setSelectedBar(bar);
-                      }
-                    }}
-                    onDoubleClick={() => {
-                      setSelectedTrack(trackIndex);
-                      if (!lockToActive) {
-                        setSelectedBar(bar);
-                      }
-                      setLoopRange((prev) =>
-                        prev && prev.start === bar && prev.end === bar
-                          ? null
-                          : { start: bar, end: bar }
-                      );
-                    }}
-                    onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
-                    onPointerEnter={(event) => onTimelineBarPointerEnter(bar, event)}
-                    data-bar-index={bar}
-                  >
-                    {t.lane[bar]}
-                  </button>
-                ))}
-                </div>
-              </div>
+                Loop
+              </button>
+              <button type="button" className="cancel" onClick={() => setTimelineBarAction(null)}>
+                Cancel
+              </button>
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </section>
 
       {isSoundOpen && (
