@@ -1886,30 +1886,6 @@ function App() {
     });
   };
 
-  const onLoopStripRailPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (event.pointerType === "mouse" && event.button !== 0) {
-      return;
-    }
-    const bar = getBarIndexFromLoopStripClientX(event.clientX);
-    if (bar === null) {
-      return;
-    }
-    event.preventDefault();
-    const stripEl = loopStripRef.current;
-    if (stripEl) {
-      stripEl.setPointerCapture(event.pointerId);
-    }
-    setLoopRange({ start: bar, end: bar });
-    setLoopStripDrag({
-      pointerId: event.pointerId,
-      pointerType: event.pointerType,
-      mode: "extendEnd",
-      start: bar,
-      end: bar,
-      anchorOffset: 0,
-    });
-  };
-
   const onLoopStripStartHandlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!loopRange) {
       return;
@@ -2916,7 +2892,6 @@ function App() {
               <div
                 ref={loopStripRef}
                 className="timeline-loop-strip"
-                onPointerDown={onLoopStripRailPointerDown}
                 role="slider"
                 aria-label="Loop range"
                 aria-valuemin={1}
