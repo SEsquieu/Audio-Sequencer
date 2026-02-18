@@ -2199,7 +2199,7 @@ function App() {
               ⏹
             </button>
           </div>
-          <label className="tempo-compact mobile-portrait-only">
+          <label className="tempo-compact mobile-only">
             Tempo
             <input
               className="tempo-value-input"

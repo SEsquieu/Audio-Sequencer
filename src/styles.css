@@ -91,7 +91,7 @@ select {
   align-items: center;
 }
 
-.mobile-portrait-only {
+.mobile-only {
   display: none;
 }
 
@@ -1441,6 +1441,10 @@ select {
     display: none;
   }
 
+  .mobile-only {
+    display: inline-flex;
+  }
+
   .ai-dock-button {
     margin-left: auto;
   }
@@ -1453,9 +1457,7 @@ select {
   }
 
   .status-row {
-    gap: 0.08rem;
-    font-size: 0.58rem;
-    line-height: 1;
+    display: none;
   }
 
   .status-row .master-volume,
@@ -1671,14 +1673,6 @@ select {
     padding: 0.02rem 0.2rem;
     border-radius: 0.3rem;
     font-size: 0.58rem;
-  }
-
-  .status-row {
-    display: none;
-  }
-
-  .mobile-portrait-only {
-    display: inline-flex;
   }
 
   .tempo-compact {
