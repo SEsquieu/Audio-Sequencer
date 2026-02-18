@@ -1426,6 +1426,12 @@ select {
     --pattern-editor-stage-height: 17.1rem;
   }
 
+  .pattern-editor-stage {
+    height: auto;
+    min-height: var(--pattern-editor-stage-height);
+    align-items: start;
+  }
+
   .panel {
     display: flex;
     flex-direction: column;
