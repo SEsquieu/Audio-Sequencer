@@ -1423,13 +1423,7 @@ select {
 @media (max-width: 899px) {
   :root {
     --pattern-editor-frame-height: 16.2rem;
-    --pattern-editor-stage-height: 17.1rem;
-  }
-
-  .pattern-editor-stage {
-    height: auto;
-    min-height: var(--pattern-editor-stage-height);
-    align-items: start;
+    --pattern-editor-stage-height: 18.3rem;
   }
 
   .panel {
