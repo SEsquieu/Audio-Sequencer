@@ -2183,6 +2183,16 @@ function App() {
                 </span>
                 <button
                   type="button"
+                  className={lockToActive ? "timeline-lock-toggle on" : "timeline-lock-toggle"}
+                  onClick={() => setLockToActive((prev) => !prev)}
+                  aria-pressed={lockToActive}
+                  aria-label={lockToActive ? "Unlock from active bar" : "Lock to active bar"}
+                  title={lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
+                >
+                  {lockToActive ? "🔒" : "🔓"}
+                </button>
+                <button
+                  type="button"
                   className="timeline-toggle-button"
                   onClick={() => setMobileTimelineControlsOpen((prev) => !prev)}
                   aria-expanded={mobileTimelineControlsOpen}
@@ -2217,17 +2227,19 @@ function App() {
                     Add 4 Bars
                   </button>
                 </div>
-                <div className="timeline-controls-center">
-                  <button
-                    type="button"
-                    className={lockToActive ? "lock-active-button on" : "lock-active-button"}
-                    onClick={() => setLockToActive((prev) => !prev)}
-                    aria-pressed={lockToActive}
-                    title="Lock editor to currently playing bar"
-                  >
-                    {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
-                  </button>
-                </div>
+                {!isMobileTimelineLayout && (
+                  <div className="timeline-controls-center">
+                    <button
+                      type="button"
+                      className={lockToActive ? "lock-active-button on" : "lock-active-button"}
+                      onClick={() => setLockToActive((prev) => !prev)}
+                      aria-pressed={lockToActive}
+                      title="Lock editor to currently playing bar"
+                    >
+                      {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
+                    </button>
+                  </div>
+                )}
                 <div className="timeline-controls-right">
                   <button type="button" onClick={() => addTrack("synth")}>
                     Add Synth Track

@@ -731,6 +731,24 @@ select {
   white-space: nowrap;
 }
 
+.timeline-lock-toggle {
+  border: 1px solid #475569;
+  background: #111827;
+  color: #e2e8f0;
+  border-radius: 0.4rem;
+  min-height: 1.6rem;
+  min-width: 1.9rem;
+  padding: 0 0.38rem;
+  line-height: 1;
+  font-size: 0.78rem;
+}
+
+.timeline-lock-toggle.on {
+  border-color: #22d3ee;
+  background: #083344;
+  color: #e2e8f0;
+}
+
 .timeline-controls-left,
 .timeline-controls-center,
 .timeline-controls-right {
@@ -1555,6 +1573,7 @@ select {
   }
 
   .timeline-mobile-strip span {
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
