@@ -91,17 +91,6 @@ select {
   align-items: center;
 }
 
-.mobile-only {
-  display: none;
-}
-
-.tempo-compact {
-  align-items: center;
-  gap: 0.2rem;
-  font-size: 0.68rem;
-  white-space: nowrap;
-}
-
 .controls-divider {
   width: 1px;
   height: 1.7rem;
@@ -1408,15 +1397,9 @@ select {
 }
 
 @media (max-width: 899px) {
-  .app-shell {
-    height: 100dvh;
-    grid-template-rows: auto auto auto;
-    overflow: hidden;
-  }
-
   .topbar {
-    padding: 0.14rem 0.36rem;
-    gap: 0.04rem;
+    padding: 0.2rem 0.4rem;
+    gap: 0.08rem;
   }
 
   .topbar h1 {
@@ -1427,22 +1410,18 @@ select {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: thin;
-    gap: 0.1rem;
+    gap: 0.14rem;
   }
 
   .top-controls button {
-    min-height: 1.14rem;
-    padding: 0.05rem 0.24rem;
-    border-radius: 0.34rem;
-    font-size: 0.62rem;
+    min-height: 1.26rem;
+    padding: 0.08rem 0.3rem;
+    border-radius: 0.4rem;
+    font-size: 0.66rem;
   }
 
   .top-controls .mobile-hide {
     display: none;
-  }
-
-  .mobile-only {
-    display: inline-flex;
   }
 
   .ai-dock-button {
@@ -1457,7 +1436,8 @@ select {
   }
 
   .status-row {
-    display: none;
+    gap: 0.12rem;
+    font-size: 0.64rem;
   }
 
   .status-row .master-volume,
@@ -1466,7 +1446,7 @@ select {
   }
 
   .status-row label {
-    gap: 0.1rem;
+    gap: 0.14rem;
   }
 
   .status-row label input[type="range"] {
@@ -1474,10 +1454,10 @@ select {
   }
 
   .tempo-value-input {
-    width: 2.2rem;
-    min-width: 2.2rem;
-    padding: 0.01rem 0.12rem;
-    font-size: 0.62rem;
+    width: 2.45rem;
+    min-width: 2.45rem;
+    padding: 0.02rem 0.16rem;
+    font-size: 0.66rem;
   }
 
   .workspace {
@@ -1655,36 +1635,6 @@ select {
 
   .step-cell {
     min-height: 1.42rem;
-  }
-}
-
-@media (max-width: 899px) and (orientation: portrait) {
-  .topbar {
-    padding: 0.1rem 0.32rem;
-    gap: 0.02rem;
-  }
-
-  .top-controls {
-    gap: 0.08rem;
-  }
-
-  .top-controls button {
-    min-height: 1.02rem;
-    padding: 0.02rem 0.2rem;
-    border-radius: 0.3rem;
-    font-size: 0.58rem;
-  }
-
-  .tempo-compact {
-    gap: 0.14rem;
-    font-size: 0.58rem;
-  }
-
-  .tempo-compact .tempo-value-input {
-    width: 1.95rem;
-    min-width: 1.95rem;
-    padding: 0.01rem 0.1rem;
-    font-size: 0.58rem;
   }
 }
 
