@@ -2330,59 +2330,59 @@ function App() {
           ))}
         </div>
 
-        <div className="timeline-loop-strip-row">
-          <div className="timeline-loop-strip-shell">
+      </div>
+      <div className="timeline-loop-strip-row">
+        <div className="timeline-loop-strip-shell">
+          <div
+            ref={loopStripRef}
+            className="timeline-loop-strip"
+            role="slider"
+            aria-label="Loop range"
+            aria-valuemin={1}
+            aria-valuemax={song.bars}
+            aria-valuenow={loopRange ? loopRange.end - loopRange.start + 1 : 0}
+          >
             <div
-              ref={loopStripRef}
-              className="timeline-loop-strip"
-              role="slider"
-              aria-label="Loop range"
-              aria-valuemin={1}
-              aria-valuemax={song.bars}
-              aria-valuenow={loopRange ? loopRange.end - loopRange.start + 1 : 0}
+              className="timeline-loop-strip-inner"
+              style={
+                {
+                  width: `${timelineContentWidthPx}px`,
+                  transform: `translateX(${-timelineScrollLeft}px)`,
+                  "--loop-strip-bar-px": `${timelineBarWidthPx}px`,
+                  "--loop-strip-stride-px": `${timelineBarStridePx}px`,
+                } as CSSProperties
+              }
             >
-              <div
-                className="timeline-loop-strip-inner"
-                style={
-                  {
-                    width: `${timelineContentWidthPx}px`,
-                    transform: `translateX(${-timelineScrollLeft}px)`,
-                    "--loop-strip-bar-px": `${timelineBarWidthPx}px`,
-                    "--loop-strip-stride-px": `${timelineBarStridePx}px`,
-                  } as CSSProperties
-                }
-              >
-                {loopRange && (
-                  <>
-                    <div
-                      className="timeline-loop-strip-resize-hit start"
-                      style={{
-                        left: `${loopStripStartHitLeftPx}px`,
-                        width: `${loopStripStartHitWidthPx}px`,
-                      }}
-                      onPointerDown={onLoopStripStartHandlePointerDown}
-                    />
-                    <div
-                      className="timeline-loop-strip-active-hit"
-                      style={{
-                        left: `${loopStripActiveLeftPx}px`,
-                        width: `${loopStripActiveWidthPx}px`,
-                      }}
-                      onPointerDown={onLoopStripActivePointerDown}
-                    >
-                      <div className="timeline-loop-strip-active" />
-                    </div>
-                    <div
-                      className="timeline-loop-strip-resize-hit end"
-                      style={{
-                        left: `${loopStripEndHitLeftPx}px`,
-                        width: `${loopStripEndHitWidthPx}px`,
-                      }}
-                      onPointerDown={onLoopStripEndHandlePointerDown}
-                    />
-                  </>
-                )}
-              </div>
+              {loopRange && (
+                <>
+                  <div
+                    className="timeline-loop-strip-resize-hit start"
+                    style={{
+                      left: `${loopStripStartHitLeftPx}px`,
+                      width: `${loopStripStartHitWidthPx}px`,
+                    }}
+                    onPointerDown={onLoopStripStartHandlePointerDown}
+                  />
+                  <div
+                    className="timeline-loop-strip-active-hit"
+                    style={{
+                      left: `${loopStripActiveLeftPx}px`,
+                      width: `${loopStripActiveWidthPx}px`,
+                    }}
+                    onPointerDown={onLoopStripActivePointerDown}
+                  >
+                    <div className="timeline-loop-strip-active" />
+                  </div>
+                  <div
+                    className="timeline-loop-strip-resize-hit end"
+                    style={{
+                      left: `${loopStripEndHitLeftPx}px`,
+                      width: `${loopStripEndHitWidthPx}px`,
+                    }}
+                    onPointerDown={onLoopStripEndHandlePointerDown}
+                  />
+                </>
+              )}
             </div>
           </div>
         </div>
