@@ -36,7 +36,8 @@ const TIMELINE_BAR_INNER_PAD_REM = 0.2;
 const TIMELINE_BAR_WIDTH_REM = 2.15;
 const TIMELINE_BAR_GAP_REM = 0.3;
 const TIMELINE_BAR_LONG_PRESS_MS = 420;
-const TIMELINE_BAR_LONG_PRESS_MOVE_PX = 10;
+const TIMELINE_BAR_LONG_PRESS_MOVE_X_PX = 6;
+const TIMELINE_BAR_LONG_PRESS_MOVE_Y_PX = 10;
 const PATTERN_PREVIEW_COLS = 16;
 const PATTERN_PREVIEW_HEIGHT = 24;
 
@@ -288,17 +289,6 @@ interface LoopRange {
   end: number;
 }
 
-interface LoopDragState {
-  anchor: number;
-  moved: boolean;
-  pointerId: number;
-  pointerType: string;
-  trackIndex: number;
-  mode: "anchor" | "extendStart" | "extendEnd";
-  fixedStart: number;
-  fixedEnd: number;
-}
-
 interface LoopStripDragState {
   pointerId: number;
   pointerType: string;
@@ -415,7 +405,6 @@ function App() {
   const [lockToActive, setLockToActive] = useState(false);
   const [mutedTrackIds, setMutedTrackIds] = useState<string[]>([]);
   const [loopRange, setLoopRange] = useState<LoopRange | null>(() => getDefaultLoopRange(song.bars));
-  const [loopDrag, setLoopDrag] = useState<LoopDragState | null>(null);
   const [loopStripDrag, setLoopStripDrag] = useState<LoopStripDragState | null>(null);
   const [playhead, setPlayhead] = useState({ bar: 0, step: 0 });
   const [isPlaying, setIsPlaying] = useState(false);
@@ -480,7 +469,6 @@ function App() {
     startY: number;
   } | null>(null);
   const timelineBarLongPressTimerRef = useRef<number | null>(null);
-  const isLoopTouchDragActive = Boolean(loopDrag && loopDrag.pointerType !== "mouse");
 
   useEffect(() => {
     songRef.current = song;
@@ -1517,7 +1505,6 @@ function App() {
     setSelectedBar(0);
     setMutedTrackIds([]);
     setLoopRange(getDefaultLoopRange(song.bars));
-    setLoopDrag(null);
     setLoopStripDrag(null);
     setTrackOctaves({});
     setTrackNoteSpanMemory({});
@@ -1575,7 +1562,6 @@ function App() {
       if (!lockToActive) {
         setSelectedBar(bar);
       }
-      setLoopDrag(null);
       setLoopStripDrag(null);
       setTimelineBarAction({
         trackIndex,
@@ -1762,7 +1748,6 @@ function App() {
         setLockToActive(false);
         setMutedTrackIds([]);
         setLoopRange(getDefaultLoopRange(nextSong.bars));
-        setLoopDrag(null);
         setLoopStripDrag(null);
         setTrackOctaves({});
         setTrackNoteSpanMemory({});
@@ -1797,33 +1782,6 @@ function App() {
         timelineBarLongPressTimerRef.current = null;
       }, TIMELINE_BAR_LONG_PRESS_MS);
     }
-
-    if ((event.pointerType === "mouse" && event.button !== 0) || !loopRange) {
-      return;
-    }
-    if (bar < loopRange.start || bar > loopRange.end) {
-      return;
-    }
-    const mode: LoopDragState["mode"] =
-      loopRange.start === loopRange.end
-        ? "anchor"
-        : bar === loopRange.start
-          ? "extendStart"
-          : bar === loopRange.end
-            ? "extendEnd"
-            : "anchor";
-    event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
-    setLoopDrag({
-      anchor: bar,
-      moved: false,
-      pointerId: event.pointerId,
-      pointerType: event.pointerType,
-      trackIndex,
-      mode,
-      fixedStart: loopRange.start,
-      fixedEnd: loopRange.end,
-    });
   };
 
   const onTimelineBarContextMenu = (
@@ -1914,96 +1872,6 @@ function App() {
     beginLoopStripDrag("move", event, bar - loopRange.start);
   };
 
-  const extendLoopRangeToBar = useCallback((bar: number) => {
-    setLoopDrag((prev) => {
-      if (!prev) {
-        return prev;
-      }
-      let nextStart = prev.fixedStart;
-      let nextEnd = prev.fixedEnd;
-      if (prev.mode === "extendStart") {
-        nextStart = Math.max(0, Math.min(bar, prev.fixedEnd));
-      } else if (prev.mode === "extendEnd") {
-        nextEnd = Math.min(song.bars - 1, Math.max(bar, prev.fixedStart));
-      } else {
-        nextStart = Math.min(prev.anchor, bar);
-        nextEnd = Math.max(prev.anchor, bar);
-      }
-      setLoopRange({ start: nextStart, end: nextEnd });
-      return {
-        ...prev,
-        moved: prev.moved || bar !== prev.anchor,
-      };
-    });
-  }, [song.bars]);
-
-  const getBarIndexFromClientX = useCallback(
-    (clientX: number, trackIndex: number) => {
-      const rowEl = timelineRowRefs.current[trackIndex];
-      if (!rowEl) {
-        return null;
-      }
-      const remPx = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
-      const cellStridePx = (TIMELINE_BAR_WIDTH_REM + TIMELINE_BAR_GAP_REM) * remPx;
-      const innerPadPx = TIMELINE_BAR_INNER_PAD_REM * remPx;
-      const rect = rowEl.getBoundingClientRect();
-      const localX = clientX - rect.left + rowEl.scrollLeft - innerPadPx;
-      if (!Number.isFinite(localX)) {
-        return null;
-      }
-      const raw = Math.floor(localX / cellStridePx);
-      return Math.max(0, Math.min(song.bars - 1, raw));
-    },
-    [song.bars]
-  );
-
-  const onTimelineBarPointerEnter = (bar: number, event: ReactPointerEvent<HTMLButtonElement>) => {
-    if (!loopDrag || event.pointerId !== loopDrag.pointerId) {
-      return;
-    }
-    if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) {
-      return;
-    }
-    extendLoopRangeToBar(bar);
-  };
-
-  useEffect(() => {
-    if (!loopDrag) {
-      return;
-    }
-    const onPointerMove = (event: PointerEvent) => {
-      if (event.pointerId !== loopDrag.pointerId) {
-        return;
-      }
-      if (loopDrag.pointerType === "mouse" && (event.buttons & 1) !== 1) {
-        return;
-      }
-      if (loopDrag.pointerType !== "mouse") {
-        event.preventDefault();
-      }
-      const bar = getBarIndexFromClientX(event.clientX, loopDrag.trackIndex);
-      if (bar === null) {
-        return;
-      }
-      extendLoopRangeToBar(bar);
-    };
-
-    const finishDrag = () => {
-      if (loopDrag.moved) {
-        suppressBarClickRef.current = true;
-      }
-      setLoopDrag(null);
-    };
-    window.addEventListener("pointermove", onPointerMove, { passive: false });
-    window.addEventListener("pointerup", finishDrag);
-    window.addEventListener("pointercancel", finishDrag);
-    return () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", finishDrag);
-      window.removeEventListener("pointercancel", finishDrag);
-    };
-  }, [extendLoopRangeToBar, getBarIndexFromClientX, loopDrag]);
-
   useEffect(() => {
     if (!loopStripDrag) {
       return;
@@ -2060,8 +1928,8 @@ function App() {
         return;
       }
       const moved =
-        Math.abs(event.clientX - pending.startX) > TIMELINE_BAR_LONG_PRESS_MOVE_PX ||
-        Math.abs(event.clientY - pending.startY) > TIMELINE_BAR_LONG_PRESS_MOVE_PX;
+        Math.abs(event.clientX - pending.startX) > TIMELINE_BAR_LONG_PRESS_MOVE_X_PX ||
+        Math.abs(event.clientY - pending.startY) > TIMELINE_BAR_LONG_PRESS_MOVE_Y_PX;
       if (moved) {
         cancelTimelineBarLongPress();
       }
@@ -2292,7 +2160,7 @@ function App() {
 
   return (
     <div
-      className={["app-shell", isLoopTouchDragActive ? "loop-touch-drag-active" : ""].join(" ")}
+      className="app-shell"
       onPointerDownCapture={() => {
         void getOrCreateEngine().ensureContext();
       }}
@@ -2875,7 +2743,6 @@ function App() {
                       }}
                       onContextMenu={(event) => onTimelineBarContextMenu(trackIndex, bar, event)}
                       onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
-                      onPointerEnter={(event) => onTimelineBarPointerEnter(bar, event)}
                       data-bar-index={bar}
                     >
                       {t.lane[bar]}

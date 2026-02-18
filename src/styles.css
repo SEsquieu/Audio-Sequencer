@@ -837,11 +837,6 @@ select {
   scrollbar-width: none;
 }
 
-.loop-touch-drag-active .bar-grid {
-  touch-action: none;
-  overscroll-behavior-x: contain;
-}
-
 .bar-grid::-webkit-scrollbar {
   display: none;
 }
