@@ -2586,6 +2586,11 @@ function App() {
             style={{ display: "none" }}
           />
         </div>
+        <div className="mobile-new-song-row">
+          <button type="button" onClick={newSong} aria-label="Start a new song">
+            New Song
+          </button>
+        </div>
         <div className="status-row">
           <label>
             Tempo

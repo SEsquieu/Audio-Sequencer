@@ -69,6 +69,10 @@ select {
   padding: 0.35rem 0.7rem;
 }
 
+.mobile-new-song-row {
+  display: none;
+}
+
 .save-song-button {
   display: inline-flex;
   align-items: center;
@@ -1511,6 +1515,22 @@ select {
   .status-row {
     gap: 0.12rem;
     font-size: 0.64rem;
+  }
+
+  .mobile-new-song-row {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 0.02rem;
+  }
+
+  .mobile-new-song-row button {
+    border: 1px solid #475569;
+    background: #111827;
+    color: #e2e8f0;
+    border-radius: 0.4rem;
+    min-height: 1.26rem;
+    padding: 0.08rem 0.3rem;
+    font-size: 0.66rem;
   }
 
   .status-row .master-volume,
