@@ -1643,6 +1643,8 @@ select {
   .timeline-add-bars-tail {
     width: 0.78rem;
     font-size: 0.64rem;
+    left: auto !important;
+    right: 0.12rem;
   }
 
   .timeline-bar-action-bubbles {
