@@ -574,6 +574,38 @@ select {
   scroll-snap-align: center;
 }
 
+.timeline-pattern-option-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.timeline-pattern-mini-preview {
+  display: grid;
+  grid-template-columns: repeat(16, minmax(0, 1fr));
+  gap: 0.1rem;
+  align-items: end;
+  min-height: 0.7rem;
+}
+
+.timeline-pattern-mini-preview span {
+  display: block;
+  border-radius: 2px;
+  height: calc(0.28rem + var(--step-level, 0.18) * 0.5rem);
+  background: rgba(100, 116, 139, 0.4);
+}
+
+.timeline-pattern-mini-preview span.on {
+  background: rgba(34, 211, 238, 0.76);
+}
+
+.timeline-pattern-option-id {
+  min-width: 1.2rem;
+  text-align: right;
+}
+
 .timeline-pattern-wheel button.active {
   border-color: rgba(34, 211, 238, 0.5);
   background: rgba(8, 51, 68, 0.5);
@@ -1479,6 +1511,14 @@ select {
   .timeline-pattern-wheel button {
     min-height: 1.48rem;
     font-size: 0.75rem;
+  }
+
+  .timeline-pattern-option-content {
+    gap: 0.35rem;
+  }
+
+  .timeline-pattern-mini-preview {
+    gap: 0.08rem;
   }
 
   .timeline-bar-action-button-row {

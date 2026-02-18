@@ -16,7 +16,7 @@ import { FilterEqPad } from "./components/FilterEqPad";
 import { SynthModPads } from "./components/SynthModPads";
 import { getMatchingPresetId, getPresetsForType } from "./state/instrumentPresets";
 import { useSong } from "./state/songContext";
-import { JsonPatchOp, PatchMeta, SongState, SynthStep, Track, TrackType, WaveformType } from "./types/song";
+import { JsonPatchOp, PatchMeta, Pattern, SongState, SynthStep, Track, TrackType, WaveformType } from "./types/song";
 
 const MIN_OCTAVE_BASE = 24;
 const MAX_OCTAVE_BASE = 96;
@@ -144,6 +144,22 @@ const findSynthNoteAtStep = (
     }
   }
   return null;
+};
+
+const getPatternStepPreviewLevels = (pattern: Pattern | undefined): number[] => {
+  if (!pattern) {
+    return Array.from({ length: 16 }, () => 0);
+  }
+  if (pattern.type === "synth") {
+    return pattern.steps.map((step) => {
+      const notes = normalizeSynthCell(step);
+      return Math.max(0, Math.min(1, notes.length / 4));
+    });
+  }
+  return pattern.steps.map((step) => {
+    const total = Number(step.kick > 0) + Number(step.snare > 0) + Number(step.hat > 0);
+    return Math.max(0, Math.min(1, total / 3));
+  });
 };
 
 const getDefaultOctaveForTrack = (track?: Track): number => {
@@ -2737,19 +2753,37 @@ function App() {
                     role="listbox"
                     aria-label="Select pattern"
                   >
-                    {timelineActionPatternIds.map((id) => (
-                      <button
-                        key={id}
-                        type="button"
-                        className={id === timelineActionPatternId ? "active" : ""}
-                        data-pattern-id={id}
-                        role="option"
-                        aria-selected={id === timelineActionPatternId}
-                        onClick={() => assignPatternToSpecificBar(timelineBarAction.trackIndex, timelineBarAction.bar, id)}
-                      >
-                        {id}
-                      </button>
-                    ))}
+                    {timelineActionPatternIds.map((id) => {
+                      const previewPattern = timelineActionTrack?.patterns[id];
+                      const previewLevels = getPatternStepPreviewLevels(previewPattern);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          className={id === timelineActionPatternId ? "active" : ""}
+                          data-pattern-id={id}
+                          role="option"
+                          aria-selected={id === timelineActionPatternId}
+                          onClick={() => {
+                            assignPatternToSpecificBar(timelineBarAction.trackIndex, timelineBarAction.bar, id);
+                            setTimelineBarAction(null);
+                          }}
+                        >
+                          <span className="timeline-pattern-option-content">
+                            <span className="timeline-pattern-mini-preview" aria-hidden="true">
+                              {previewLevels.map((level, step) => (
+                                <span
+                                  key={`${id}-p-${step}`}
+                                  style={{ "--step-level": `${Math.max(0.18, level)}` } as CSSProperties}
+                                  className={level > 0 ? "on" : ""}
+                                />
+                              ))}
+                            </span>
+                            <span className="timeline-pattern-option-id">{id}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
