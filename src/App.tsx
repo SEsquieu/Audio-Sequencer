@@ -38,6 +38,7 @@ const TIMELINE_BAR_GAP_REM = 0.3;
 const TIMELINE_BAR_LONG_PRESS_MS = 420;
 const TIMELINE_BAR_LONG_PRESS_MOVE_X_PX = 6;
 const TIMELINE_BAR_LONG_PRESS_MOVE_Y_PX = 10;
+const LOOP_STRIP_RESIZE_HIT_PX = 14;
 const PATTERN_PREVIEW_COLS = 16;
 const PATTERN_PREVIEW_HEIGHT = 24;
 
@@ -623,6 +624,18 @@ function App() {
   const loopStripActiveLeftPx = timelineInnerPadPx + loopRangeStart * timelineBarStridePx;
   const loopStripActiveWidthPx =
     loopRangeBars * timelineBarWidthPx + Math.max(0, loopRangeBars - 1) * timelineBarGapPx;
+  const loopStripActiveRightPx = loopStripActiveLeftPx + loopStripActiveWidthPx;
+  const loopStripResizeHitWidthPx = LOOP_STRIP_RESIZE_HIT_PX * 2;
+  const loopStripStartHitLeftPx = Math.max(0, loopStripActiveLeftPx - LOOP_STRIP_RESIZE_HIT_PX);
+  const loopStripStartHitWidthPx = Math.min(
+    loopStripResizeHitWidthPx,
+    Math.max(0, timelineContentWidthPx - loopStripStartHitLeftPx)
+  );
+  const loopStripEndHitLeftPx = Math.max(0, loopStripActiveRightPx - LOOP_STRIP_RESIZE_HIT_PX);
+  const loopStripEndHitWidthPx = Math.min(
+    loopStripResizeHitWidthPx,
+    Math.max(0, timelineContentWidthPx - loopStripEndHitLeftPx)
+  );
   const availablePresets = useMemo(() => (track ? getPresetsForType(track.type) : []), [track]);
   const selectedPresetId = useMemo(
     () => (track ? getMatchingPresetId(track.type, track.instrument) : null),
@@ -2764,7 +2777,7 @@ function App() {
                 aria-valuemin={1}
                 aria-valuemax={song.bars}
                 aria-valuenow={loopRange ? loopRange.end - loopRange.start + 1 : 0}
-              >
+                >
                 <div
                   className="timeline-loop-strip-inner"
                   style={
@@ -2777,18 +2790,34 @@ function App() {
                   }
                 >
                   {loopRange && (
-                    <div
-                      className="timeline-loop-strip-active"
-                      style={{
-                        left: `${loopStripActiveLeftPx}px`,
-                        width: `${loopStripActiveWidthPx}px`,
-                      }}
-                      onPointerDown={onLoopStripActivePointerDown}
-                    >
-                      <div className="timeline-loop-strip-handle start" onPointerDown={onLoopStripStartHandlePointerDown} />
-                      <div className="timeline-loop-strip-fill" />
-                      <div className="timeline-loop-strip-handle end" onPointerDown={onLoopStripEndHandlePointerDown} />
-                    </div>
+                    <>
+                      <div
+                        className="timeline-loop-strip-resize-hit start"
+                        style={{
+                          left: `${loopStripStartHitLeftPx}px`,
+                          width: `${loopStripStartHitWidthPx}px`,
+                        }}
+                        onPointerDown={onLoopStripStartHandlePointerDown}
+                      />
+                      <div
+                        className="timeline-loop-strip-active-hit"
+                        style={{
+                          left: `${loopStripActiveLeftPx}px`,
+                          width: `${loopStripActiveWidthPx}px`,
+                        }}
+                        onPointerDown={onLoopStripActivePointerDown}
+                      >
+                        <div className="timeline-loop-strip-active" />
+                      </div>
+                      <div
+                        className="timeline-loop-strip-resize-hit end"
+                        style={{
+                          left: `${loopStripEndHitLeftPx}px`,
+                          width: `${loopStripEndHitWidthPx}px`,
+                        }}
+                        onPointerDown={onLoopStripEndHandlePointerDown}
+                      />
+                    </>
                   )}
                 </div>
               </div>

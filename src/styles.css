@@ -484,7 +484,7 @@ select {
 
 .timeline-loop-strip {
   position: relative;
-  height: 0.92rem;
+  height: 1.5rem;
   border-radius: 999px;
   border: 0;
   background: transparent;
@@ -500,37 +500,32 @@ select {
   background: transparent;
 }
 
+.timeline-loop-strip-active-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
 .timeline-loop-strip-active {
   position: absolute;
-  top: 0.08rem;
-  bottom: 0.08rem;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 0.92rem;
+  left: 0;
+  right: 0;
   border-radius: 999px;
   background: rgba(34, 211, 238, 0.18);
   border: 1px solid rgba(34, 211, 238, 0.78);
   box-shadow: 0 0 8px rgba(34, 211, 238, 0.22);
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: stretch;
   min-width: 0.92rem;
 }
 
-.timeline-loop-strip-fill {
-  min-width: 0;
-}
-
-.timeline-loop-strip-handle {
-  width: 0.38rem;
-  border-radius: 999px;
+.timeline-loop-strip-resize-hit {
+  position: absolute;
+  top: 0;
+  bottom: 0;
   background: transparent;
-  align-self: stretch;
-}
-
-.timeline-loop-strip-handle.start {
-  margin: 0.02rem 0 0.02rem 0.05rem;
-}
-
-.timeline-loop-strip-handle.end {
-  margin: 0.02rem 0.05rem 0.02rem 0;
+  z-index: 3;
 }
 
 .timeline-dock {
@@ -1603,11 +1598,7 @@ select {
   }
 
   .timeline-loop-strip {
-    height: 1rem;
-  }
-
-  .timeline-loop-strip-handle {
-    width: 0.44rem;
+    height: 1.62rem;
   }
 
   .step-grid-editor {
