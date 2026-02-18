@@ -1543,6 +1543,86 @@ function App() {
     [lockToActive]
   );
 
+  const clearPatternAtBar = useCallback(
+    (trackIndex: number, bar: number) => {
+      const targetTrack = song.tracks[trackIndex];
+      if (!targetTrack) {
+        return;
+      }
+      const targetPatternId = targetTrack.lane[bar] ?? "0";
+      if (targetPatternId === "0") {
+        return;
+      }
+
+      const remainingUseCount = targetTrack.lane.reduce((count, lanePatternId, laneIndex) => {
+        if (laneIndex === bar) {
+          return count;
+        }
+        return lanePatternId === targetPatternId ? count + 1 : count;
+      }, 0);
+
+      const ops: JsonPatchOp[] = [
+        {
+          op: "replace",
+          path: `/tracks/${trackIndex}/lane/${bar}`,
+          value: "0",
+        },
+      ];
+
+      if (remainingUseCount === 0 && targetTrack.patterns[targetPatternId]) {
+        ops.push({
+          op: "remove",
+          path: `/tracks/${trackIndex}/patterns/${targetPatternId}`,
+        });
+      }
+
+      createAndCommit("Clear Bar Pattern", ops);
+      setSelectedTrack(trackIndex);
+      if (!lockToActive) {
+        setSelectedBar(bar);
+      }
+    },
+    [createAndCommit, lockToActive, song.tracks]
+  );
+
+  const createBlankPatternAtBar = useCallback(
+    (trackIndex: number, bar: number) => {
+      const targetTrack = song.tracks[trackIndex];
+      if (!targetTrack) {
+        return;
+      }
+      const nextPatternId = nextPatternIdFromRecord(targetTrack.patterns);
+      const patternValue =
+        targetTrack.type === "synth"
+          ? {
+              type: "synth" as const,
+              steps: createEmptySynthSteps(),
+            }
+          : {
+              type: "drums" as const,
+              steps: createEmptyDrumSteps(),
+            };
+
+      createAndCommit("Create Blank Pattern For Bar", [
+        {
+          op: "add",
+          path: `/tracks/${trackIndex}/patterns/${nextPatternId}`,
+          value: patternValue,
+        },
+        {
+          op: "replace",
+          path: `/tracks/${trackIndex}/lane/${bar}`,
+          value: nextPatternId,
+        },
+      ]);
+      setSelectedTrack(trackIndex);
+      if (!lockToActive) {
+        setSelectedBar(bar);
+      }
+    },
+    [createAndCommit, lockToActive, song.tracks]
+  );
+
   const onImportSongFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -2609,10 +2689,22 @@ function App() {
               >
                 Dupe
               </button>
-              <button type="button" onClick={() => setTimelineBarAction(null)}>
+              <button
+                type="button"
+                onClick={() => {
+                  createBlankPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
                 New
               </button>
-              <button type="button" onClick={() => setTimelineBarAction(null)}>
+              <button
+                type="button"
+                onClick={() => {
+                  clearPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
                 Clear
               </button>
               <button
