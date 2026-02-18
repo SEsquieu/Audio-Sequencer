@@ -1397,6 +1397,15 @@ select {
 }
 
 @media (max-width: 899px) {
+  .app-shell {
+    grid-template-rows: auto auto auto;
+    overflow-y: auto;
+  }
+
+  .panel {
+    overflow: visible;
+  }
+
   .topbar {
     padding: 0.35rem 0.45rem;
     gap: 0.2rem;
@@ -1454,11 +1463,13 @@ select {
   }
 
   .workspace {
-    gap: 0.5rem;
+    gap: 0.18rem;
+    height: auto;
   }
 
   .main-view {
-    padding: 0.5rem;
+    height: auto;
+    padding: 0.4rem 0.5rem 0.1rem;
   }
 
   .sound-column {
@@ -1494,7 +1505,7 @@ select {
   }
 
   .timeline-dock {
-    padding: 0.42rem 0.5rem 0.48rem;
+    padding: 0.16rem 0.5rem 0.42rem;
     height: clamp(6.8rem, 29dvh, 9.4rem);
     max-height: 31dvh;
   }
