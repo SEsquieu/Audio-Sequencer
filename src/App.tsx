@@ -4,6 +4,7 @@ import {
   FormEvent,
   MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
+  WheelEvent as ReactWheelEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -298,6 +299,15 @@ interface LoopDragState {
   fixedEnd: number;
 }
 
+interface LoopStripDragState {
+  pointerId: number;
+  pointerType: string;
+  mode: "extendStart" | "extendEnd" | "move";
+  start: number;
+  end: number;
+  anchorOffset: number;
+}
+
 interface OctaveScrubState {
   pointerId: number;
   startY: number;
@@ -318,11 +328,6 @@ interface DrumWalkState {
   lastLane: "kick" | "snare" | "hat" | null;
 }
 
-interface TimelineScrollMetrics {
-  max: number;
-  viewport: number;
-}
-
 interface TimelineBarActionState {
   trackIndex: number;
   bar: number;
@@ -336,6 +341,11 @@ interface ExportedSongFile {
   exportedAt: string;
   song: SongState;
 }
+
+const getDefaultLoopRange = (bars: number): LoopRange => ({
+  start: 0,
+  end: Math.max(0, Math.min(3, bars - 1)),
+});
 
 const isSongStateLike = (value: unknown): value is SongState => {
   if (!value || typeof value !== "object") {
@@ -404,8 +414,9 @@ function App() {
   const [selectedBar, setSelectedBar] = useState(0);
   const [lockToActive, setLockToActive] = useState(false);
   const [mutedTrackIds, setMutedTrackIds] = useState<string[]>([]);
-  const [loopRange, setLoopRange] = useState<LoopRange | null>(null);
+  const [loopRange, setLoopRange] = useState<LoopRange | null>(() => getDefaultLoopRange(song.bars));
   const [loopDrag, setLoopDrag] = useState<LoopDragState | null>(null);
+  const [loopStripDrag, setLoopStripDrag] = useState<LoopStripDragState | null>(null);
   const [playhead, setPlayhead] = useState({ bar: 0, step: 0 });
   const [isPlaying, setIsPlaying] = useState(false);
   const [masterVolume, setMasterVolume] = useState(0.8);
@@ -458,12 +469,7 @@ function App() {
   const timelineRowRefs = useRef<Array<HTMLDivElement | null>>([]);
   const syncingTimelineScrollRef = useRef(false);
   const [timelineScrollLeft, setTimelineScrollLeft] = useState(0);
-  const [timelineScrollMetrics, setTimelineScrollMetrics] = useState<TimelineScrollMetrics>({
-    max: 0,
-    viewport: 1,
-  });
-  const timelineScrubberRef = useRef<HTMLDivElement | null>(null);
-  const timelineScrubPointerIdRef = useRef<number | null>(null);
+  const loopStripRef = useRef<HTMLDivElement | null>(null);
   const timelinePatternWheelRef = useRef<HTMLDivElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const timelineBarLongPressRef = useRef<{
@@ -606,18 +612,29 @@ function App() {
     loopRange !== null
       ? Math.max(1, loopRange.end - loopRange.start + 1)
       : Math.max(1, Math.min(song.bars, effectiveLoopBars));
-  const loopRegionLeftPercent = (loopRangeStart / song.bars) * 100;
-  const loopRegionPercent = (loopRangeBars / song.bars) * 100;
   const loopStepsTotal = Math.max(1, loopRangeBars * 16);
   const loopRelativeStep = (playhead.bar - loopRangeStart) * 16 + playhead.step;
   const loopRelativeBars = Math.max(0, Math.min(loopStepsTotal - 1, loopRelativeStep)) / 16;
   const timelineLabelRem = isMobileTimelineLayout ? TIMELINE_LABEL_REM_MOBILE : TIMELINE_LABEL_REM_DESKTOP;
   const timelineRowGapRem = isMobileTimelineLayout ? TIMELINE_ROW_GAP_REM_MOBILE : TIMELINE_ROW_GAP_REM_DESKTOP;
-  const globalSweepLeftRem =
-    timelineLabelRem +
-    timelineRowGapRem +
-    TIMELINE_BAR_INNER_PAD_REM +
-    (loopRangeStart + loopRelativeBars) * (TIMELINE_BAR_WIDTH_REM + TIMELINE_BAR_GAP_REM);
+  const rootRemPx =
+    typeof window === "undefined" ? 16 : Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+  const timelineBarWidthPx = TIMELINE_BAR_WIDTH_REM * rootRemPx;
+  const timelineBarGapPx = TIMELINE_BAR_GAP_REM * rootRemPx;
+  const timelineBarStridePx = timelineBarWidthPx + timelineBarGapPx;
+  const timelineInnerPadPx = TIMELINE_BAR_INNER_PAD_REM * rootRemPx;
+  const globalSweepBasePx = (timelineLabelRem + timelineRowGapRem + TIMELINE_BAR_INNER_PAD_REM) * rootRemPx;
+  const globalSweepAbsolutePx =
+    globalSweepBasePx + (loopRangeStart + loopRelativeBars) * timelineBarStridePx;
+  const globalSweepViewportPx = globalSweepAbsolutePx - timelineScrollLeft;
+  const shouldShowGlobalSweep = globalSweepViewportPx >= globalSweepBasePx - 1;
+  const timelineContentWidthPx =
+    timelineInnerPadPx * 2 +
+    song.bars * timelineBarWidthPx +
+    Math.max(0, song.bars - 1) * timelineBarGapPx;
+  const loopStripActiveLeftPx = timelineInnerPadPx + loopRangeStart * timelineBarStridePx;
+  const loopStripActiveWidthPx =
+    loopRangeBars * timelineBarWidthPx + Math.max(0, loopRangeBars - 1) * timelineBarGapPx;
   const availablePresets = useMemo(() => (track ? getPresetsForType(track.type) : []), [track]);
   const selectedPresetId = useMemo(
     () => (track ? getMatchingPresetId(track.type, track.instrument) : null),
@@ -699,19 +716,6 @@ function App() {
     setIsPlaying(true);
   }, []);
 
-  const updateTimelineScrollMetrics = useCallback((el: HTMLDivElement | null) => {
-    if (!el) {
-      return;
-    }
-    const max = Math.max(0, el.scrollWidth - el.clientWidth);
-    setTimelineScrollMetrics((prev) => {
-      if (Math.abs(prev.max - max) < 0.5 && Math.abs(prev.viewport - el.clientWidth) < 0.5) {
-        return prev;
-      }
-      return { max, viewport: Math.max(1, el.clientWidth) };
-    });
-  }, []);
-
   const syncTimelineScroll = useCallback((sourceIndex: number, scrollLeft: number) => {
     if (syncingTimelineScrollRef.current) {
       return;
@@ -729,6 +733,30 @@ function App() {
     syncingTimelineScrollRef.current = false;
   }, []);
 
+  const onTimelineWheel = useCallback(
+    (event: ReactWheelEvent<HTMLDivElement>) => {
+      if (isMobileTimelineLayout) {
+        return;
+      }
+      const baseRow = timelineRowRefs.current[0];
+      if (!baseRow) {
+        return;
+      }
+      const max = Math.max(0, baseRow.scrollWidth - baseRow.clientWidth);
+      if (max <= 0) {
+        return;
+      }
+      const dominantDelta = event.deltaX !== 0 ? event.deltaX : event.deltaY;
+      if (!Number.isFinite(dominantDelta) || dominantDelta === 0) {
+        return;
+      }
+      event.preventDefault();
+      const next = Math.max(0, Math.min(max, timelineScrollLeft + dominantDelta));
+      syncTimelineScroll(-1, next);
+    },
+    [isMobileTimelineLayout, syncTimelineScroll, timelineScrollLeft]
+  );
+
   useEffect(() => {
     timelineRowRefs.current.forEach((el) => {
       if (!el) {
@@ -739,74 +767,6 @@ function App() {
       }
     });
   }, [song.tracks.length, timelineScrollLeft]);
-
-  useEffect(() => {
-    const measure = () => updateTimelineScrollMetrics(timelineRowRefs.current[0] ?? null);
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
-  }, [song.bars, song.tracks.length, updateTimelineScrollMetrics]);
-
-  const timelineViewportRatio =
-    timelineScrollMetrics.max <= 0
-      ? 1
-      : Math.max(
-          0.1,
-          Math.min(1, timelineScrollMetrics.viewport / (timelineScrollMetrics.viewport + timelineScrollMetrics.max))
-        );
-  const timelineWindowWidthPercent = timelineViewportRatio * 100;
-  const timelineWindowTravelPercent = Math.max(0, 100 - timelineWindowWidthPercent);
-  const timelineWindowLeftPercent =
-    timelineScrollMetrics.max <= 0
-      ? 0
-      : (Math.max(0, Math.min(timelineScrollMetrics.max, timelineScrollLeft)) / timelineScrollMetrics.max) *
-        timelineWindowTravelPercent;
-
-  const applyTimelineScrollFromClientX = useCallback(
-    (clientX: number, scrubberEl: HTMLDivElement) => {
-      if (timelineScrollMetrics.max <= 0) {
-        return;
-      }
-      const rect = scrubberEl.getBoundingClientRect();
-      if (rect.width <= 0) {
-        return;
-      }
-      const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-      const nextScroll = ratio * timelineScrollMetrics.max;
-      syncTimelineScroll(-1, nextScroll);
-    },
-    [syncTimelineScroll, timelineScrollMetrics.max]
-  );
-
-  const onTimelineScrubberPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (timelineScrollMetrics.max <= 0) {
-      return;
-    }
-    event.preventDefault();
-    timelineScrubPointerIdRef.current = event.pointerId;
-    event.currentTarget.setPointerCapture(event.pointerId);
-    applyTimelineScrollFromClientX(event.clientX, event.currentTarget);
-  };
-
-  const onTimelineScrubberPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (timelineScrubPointerIdRef.current !== event.pointerId) {
-      return;
-    }
-    if (event.pointerType === "mouse" && (event.buttons & 1) !== 1) {
-      return;
-    }
-    applyTimelineScrollFromClientX(event.clientX, event.currentTarget);
-  };
-
-  const onTimelineScrubberPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (timelineScrubPointerIdRef.current !== event.pointerId) {
-      return;
-    }
-    timelineScrubPointerIdRef.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
 
   const onPause = useCallback(() => {
     if (!engineRef.current || !engineRef.current.playing) {
@@ -1556,8 +1516,9 @@ function App() {
     setSelectedTrack(0);
     setSelectedBar(0);
     setMutedTrackIds([]);
-    setLoopRange(null);
+    setLoopRange(getDefaultLoopRange(song.bars));
     setLoopDrag(null);
+    setLoopStripDrag(null);
     setTrackOctaves({});
     setTrackNoteSpanMemory({});
     setOctaveBase(DEFAULT_OCTAVE_BASE);
@@ -1615,6 +1576,7 @@ function App() {
         setSelectedBar(bar);
       }
       setLoopDrag(null);
+      setLoopStripDrag(null);
       setTimelineBarAction({
         trackIndex,
         bar,
@@ -1631,11 +1593,7 @@ function App() {
       if (!lockToActive) {
         setSelectedBar(bar);
       }
-      setLoopRange((prev) =>
-        prev && prev.start === bar && prev.end === bar
-          ? null
-          : { start: bar, end: bar }
-      );
+      setLoopRange({ start: bar, end: bar });
     },
     [lockToActive]
   );
@@ -1803,8 +1761,9 @@ function App() {
         setSelectedBar(0);
         setLockToActive(false);
         setMutedTrackIds([]);
-        setLoopRange(null);
+        setLoopRange(getDefaultLoopRange(nextSong.bars));
         setLoopDrag(null);
+        setLoopStripDrag(null);
         setTrackOctaves({});
         setTrackNoteSpanMemory({});
         setOctaveBase(DEFAULT_OCTAVE_BASE);
@@ -1877,6 +1836,106 @@ function App() {
     }
     event.preventDefault();
     openTimelineBarActionMenu(trackIndex, bar, event.clientX, event.clientY);
+  };
+
+  const getBarIndexFromLoopStripClientX = useCallback(
+    (clientX: number) => {
+      const stripEl = loopStripRef.current;
+      if (!stripEl) {
+        return null;
+      }
+      const rect = stripEl.getBoundingClientRect();
+      if (rect.width <= 0) {
+        return null;
+      }
+      const remPx = Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const stridePx = (TIMELINE_BAR_WIDTH_REM + TIMELINE_BAR_GAP_REM) * remPx;
+      const innerPadPx = TIMELINE_BAR_INNER_PAD_REM * remPx;
+      const localX = clientX - rect.left + timelineScrollLeft - innerPadPx;
+      if (!Number.isFinite(localX)) {
+        return null;
+      }
+      return Math.max(0, Math.min(song.bars - 1, Math.floor(localX / stridePx)));
+    },
+    [song.bars, timelineScrollLeft]
+  );
+
+  const beginLoopStripDrag = (
+    mode: LoopStripDragState["mode"],
+    event: ReactPointerEvent<HTMLDivElement>,
+    anchorOffset: number
+  ) => {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    if (!loopRange) {
+      return;
+    }
+    event.preventDefault();
+    const stripEl = loopStripRef.current;
+    if (stripEl) {
+      stripEl.setPointerCapture(event.pointerId);
+    }
+    setLoopStripDrag({
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      mode,
+      start: loopRange.start,
+      end: loopRange.end,
+      anchorOffset,
+    });
+  };
+
+  const onLoopStripRailPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === "mouse" && event.button !== 0) {
+      return;
+    }
+    const bar = getBarIndexFromLoopStripClientX(event.clientX);
+    if (bar === null) {
+      return;
+    }
+    event.preventDefault();
+    const stripEl = loopStripRef.current;
+    if (stripEl) {
+      stripEl.setPointerCapture(event.pointerId);
+    }
+    setLoopRange({ start: bar, end: bar });
+    setLoopStripDrag({
+      pointerId: event.pointerId,
+      pointerType: event.pointerType,
+      mode: "extendEnd",
+      start: bar,
+      end: bar,
+      anchorOffset: 0,
+    });
+  };
+
+  const onLoopStripStartHandlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!loopRange) {
+      return;
+    }
+    event.stopPropagation();
+    beginLoopStripDrag("extendStart", event, 0);
+  };
+
+  const onLoopStripEndHandlePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!loopRange) {
+      return;
+    }
+    event.stopPropagation();
+    beginLoopStripDrag("extendEnd", event, 0);
+  };
+
+  const onLoopStripActivePointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!loopRange) {
+      return;
+    }
+    event.stopPropagation();
+    const bar = getBarIndexFromLoopStripClientX(event.clientX);
+    if (bar === null) {
+      return;
+    }
+    beginLoopStripDrag("move", event, bar - loopRange.start);
   };
 
   const extendLoopRangeToBar = useCallback((bar: number) => {
@@ -1968,6 +2027,55 @@ function App() {
       window.removeEventListener("pointercancel", finishDrag);
     };
   }, [extendLoopRangeToBar, getBarIndexFromClientX, loopDrag]);
+
+  useEffect(() => {
+    if (!loopStripDrag) {
+      return;
+    }
+    const onPointerMove = (event: PointerEvent) => {
+      if (event.pointerId !== loopStripDrag.pointerId) {
+        return;
+      }
+      if (loopStripDrag.pointerType === "mouse" && (event.buttons & 1) !== 1) {
+        return;
+      }
+      if (loopStripDrag.pointerType !== "mouse") {
+        event.preventDefault();
+      }
+      const bar = getBarIndexFromLoopStripClientX(event.clientX);
+      if (bar === null) {
+        return;
+      }
+      if (loopStripDrag.mode === "extendStart") {
+        setLoopRange({ start: Math.min(bar, loopStripDrag.end), end: loopStripDrag.end });
+        return;
+      }
+      if (loopStripDrag.mode === "extendEnd") {
+        setLoopRange({ start: loopStripDrag.start, end: Math.max(bar, loopStripDrag.start) });
+        return;
+      }
+      const span = loopStripDrag.end - loopStripDrag.start;
+      const unclampedStart = bar - loopStripDrag.anchorOffset;
+      const nextStart = Math.max(0, Math.min(song.bars - 1 - span, unclampedStart));
+      setLoopRange({ start: nextStart, end: nextStart + span });
+    };
+
+    const finishDrag = () => {
+      setLoopStripDrag(null);
+      if (loopStripRef.current?.hasPointerCapture(loopStripDrag.pointerId)) {
+        loopStripRef.current.releasePointerCapture(loopStripDrag.pointerId);
+      }
+    };
+
+    window.addEventListener("pointermove", onPointerMove, { passive: false });
+    window.addEventListener("pointerup", finishDrag);
+    window.addEventListener("pointercancel", finishDrag);
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", finishDrag);
+      window.removeEventListener("pointercancel", finishDrag);
+    };
+  }, [getBarIndexFromLoopStripClientX, loopStripDrag, song.bars]);
 
   useEffect(() => {
     const onPointerMove = (event: PointerEvent) => {
@@ -2684,11 +2792,6 @@ function App() {
                     <button type="button" onClick={() => addBars(4)}>
                       Add 4 Bars
                     </button>
-                    {loopRange !== null && (
-                      <button type="button" onClick={() => setLoopRange(null)}>
-                        Clear Loop (Bars {loopRange.start + 1}-{loopRange.end + 1})
-                      </button>
-                    )}
                   </div>
                   <div className="timeline-controls-center">
                     <button
@@ -2714,38 +2817,14 @@ function App() {
             </>
           )}
 
-          <div className="timeline-radial-shell">
-            <div
-              ref={timelineScrubberRef}
-              className="timeline-radial-scrubber"
-              onPointerDown={onTimelineScrubberPointerDown}
-              onPointerMove={onTimelineScrubberPointerMove}
-              onPointerUp={onTimelineScrubberPointerEnd}
-              onPointerCancel={onTimelineScrubberPointerEnd}
-              role="slider"
-              aria-label="Timeline scroll"
-              aria-valuemin={0}
-              aria-valuemax={Math.round(timelineScrollMetrics.max)}
-              aria-valuenow={Math.round(timelineScrollLeft)}
-            >
+          <div className="timeline-rows-wrap" onWheel={onTimelineWheel}>
+            {shouldShowGlobalSweep && (
               <div
-                className="timeline-radial-window"
-                style={
-                  {
-                    "--timeline-window-left": `${timelineWindowLeftPercent}%`,
-                    "--timeline-window-width": `${timelineWindowWidthPercent}%`,
-                  } as CSSProperties
-                }
+                className="timeline-global-sweep"
+                style={{ left: `${globalSweepViewportPx}px` }}
+                aria-hidden="true"
               />
-            </div>
-          </div>
-
-          <div className="timeline-rows-wrap">
-            <div
-              className="timeline-global-sweep"
-              style={{ left: `calc(${globalSweepLeftRem}rem - ${timelineScrollLeft}px)` }}
-              aria-hidden="true"
-            />
+            )}
             {song.tracks.map((t, trackIndex) => (
               <div
                 key={t.id}
@@ -2767,12 +2846,8 @@ function App() {
                   className="bar-grid"
                   ref={(el) => {
                     timelineRowRefs.current[trackIndex] = el;
-                    if (trackIndex === 0) {
-                      updateTimelineScrollMetrics(el);
-                    }
                   }}
                   onScroll={(event) => {
-                    updateTimelineScrollMetrics(event.currentTarget);
                     syncTimelineScroll(trackIndex, event.currentTarget.scrollLeft);
                   }}
                 >
@@ -2782,21 +2857,35 @@ function App() {
                       gridTemplateColumns: `repeat(${song.bars}, 2.15rem)`,
                     }}
                   >
-                  <div
-                    className="timeline-loop-region"
-                    style={{
-                      width: `${loopRegionPercent}%`,
-                      left: `calc(0.2rem + ${loopRegionLeftPercent}%)`,
-                    }}
-                    aria-hidden="true"
-                  />
+                  {loopRange && (
+                    <>
+                      {loopStripActiveLeftPx > 0 && (
+                        <div
+                          className="timeline-loop-mask left"
+                          style={{ width: `${loopStripActiveLeftPx}px` }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      {loopStripActiveLeftPx + loopStripActiveWidthPx < timelineContentWidthPx && (
+                        <div
+                          className="timeline-loop-mask right"
+                          style={{
+                            left: `${loopStripActiveLeftPx + loopStripActiveWidthPx}px`,
+                            width: `${Math.max(0, timelineContentWidthPx - (loopStripActiveLeftPx + loopStripActiveWidthPx))}px`,
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </>
+                  )}
                   {barOptions.map((bar) => (
                     <button
                       key={`${t.id}-${bar}`}
                       className={[
                         "bar-cell",
                         selectedBar === bar && safeTrackIndex === trackIndex ? "active" : "",
-                        loopRange && bar >= loopRange.start && bar <= loopRange.end ? "looped" : "",
+                        t.lane[bar] !== "0" ? "assigned" : "",
+                        t.lane[bar] === "0" ? "unassigned" : "",
                       ].join(" ")}
                       onClick={() => {
                         if (suppressBarClickRef.current) {
@@ -2807,9 +2896,6 @@ function App() {
                         if (!lockToActive) {
                           setSelectedBar(bar);
                         }
-                      }}
-                      onDoubleClick={() => {
-                        toggleSingleBarLoop(trackIndex, bar);
                       }}
                       onContextMenu={(event) => onTimelineBarContextMenu(trackIndex, bar, event)}
                       onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
@@ -2823,6 +2909,48 @@ function App() {
                 </div>
               </div>
             ))}
+          </div>
+
+          <div className="timeline-loop-strip-row">
+            <div className="timeline-loop-strip-shell">
+              <div
+                ref={loopStripRef}
+                className="timeline-loop-strip"
+                onPointerDown={onLoopStripRailPointerDown}
+                role="slider"
+                aria-label="Loop range"
+                aria-valuemin={1}
+                aria-valuemax={song.bars}
+                aria-valuenow={loopRange ? loopRange.end - loopRange.start + 1 : 0}
+              >
+                <div
+                  className="timeline-loop-strip-inner"
+                  style={
+                    {
+                      width: `${timelineContentWidthPx}px`,
+                      transform: `translateX(${-timelineScrollLeft}px)`,
+                      "--loop-strip-bar-px": `${timelineBarWidthPx}px`,
+                      "--loop-strip-stride-px": `${timelineBarStridePx}px`,
+                    } as CSSProperties
+                  }
+                >
+                  {loopRange && (
+                    <div
+                      className="timeline-loop-strip-active"
+                      style={{
+                        left: `${loopStripActiveLeftPx}px`,
+                        width: `${loopStripActiveWidthPx}px`,
+                      }}
+                      onPointerDown={onLoopStripActivePointerDown}
+                    >
+                      <div className="timeline-loop-strip-handle start" onPointerDown={onLoopStripStartHandlePointerDown} />
+                      <div className="timeline-loop-strip-fill" />
+                      <div className="timeline-loop-strip-handle end" onPointerDown={onLoopStripEndHandlePointerDown} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
