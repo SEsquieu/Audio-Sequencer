@@ -4,7 +4,7 @@
   background: radial-gradient(circle at 20% 10%, #1e293b 0%, #0b1020 45%, #020617 100%);
   line-height: 1.4;
   --pattern-editor-frame-height: 18.2rem;
-  --pattern-editor-stage-min-height: 19.2rem;
+  --pattern-editor-stage-height: 19.2rem;
 }
 
 * {
@@ -938,7 +938,14 @@ select {
 }
 
 .pattern-editor-stage {
-  min-height: var(--pattern-editor-stage-min-height);
+  height: var(--pattern-editor-stage-height);
+  min-height: var(--pattern-editor-stage-height);
+  display: grid;
+  align-items: center;
+}
+
+.pattern-editor-stage > * {
+  width: 100%;
 }
 
 .editor-sweep {
@@ -979,7 +986,6 @@ select {
 }
 
 .step-grid-editor.drum-editor {
-  min-height: var(--pattern-editor-frame-height);
   align-content: start;
 }
 
@@ -1417,7 +1423,7 @@ select {
 @media (max-width: 899px) {
   :root {
     --pattern-editor-frame-height: 16.2rem;
-    --pattern-editor-stage-min-height: 17.1rem;
+    --pattern-editor-stage-height: 17.1rem;
   }
 
   .panel {
