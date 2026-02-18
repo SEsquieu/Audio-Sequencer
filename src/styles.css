@@ -1496,11 +1496,11 @@ select {
 
   .main-view {
     height: auto;
-    padding: 0.22rem 0.5rem 0.28rem;
+    padding: 0.22rem 0.5rem 0.56rem;
   }
 
   .pattern-editor-stage {
-    margin-bottom: 0.22rem;
+    margin-bottom: 0.44rem;
   }
 
   .sound-column {
