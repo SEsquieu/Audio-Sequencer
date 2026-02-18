@@ -2732,7 +2732,7 @@ function App() {
 
                 {track.type === "drums" && (
                   <div
-                    className="step-grid step-grid-editor"
+                    className="step-grid step-grid-editor drum-editor"
                     style={editorSweepStyle}
                   >
                     {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}

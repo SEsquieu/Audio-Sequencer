@@ -3,6 +3,7 @@
   color: #e2e8f0;
   background: radial-gradient(circle at 20% 10%, #1e293b 0%, #0b1020 45%, #020617 100%);
   line-height: 1.4;
+  --pattern-editor-frame-height: 18.2rem;
 }
 
 * {
@@ -967,9 +968,15 @@ select {
   display: grid;
   overflow: hidden;
   min-height: 0;
+  height: var(--pattern-editor-frame-height);
   perspective: 780px;
   transform: translateY(calc(var(--octave-scrub-offset, 0px) * -0.45));
   transition: transform 80ms linear;
+}
+
+.step-grid-editor.drum-editor {
+  min-height: var(--pattern-editor-frame-height);
+  align-content: start;
 }
 
 .octave-grid-viewport .octave-layer {
@@ -1404,6 +1411,10 @@ select {
 }
 
 @media (max-width: 899px) {
+  :root {
+    --pattern-editor-frame-height: 16.2rem;
+  }
+
   .panel {
     display: flex;
     flex-direction: column;
