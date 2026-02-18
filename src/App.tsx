@@ -2657,7 +2657,7 @@ function App() {
         <div className="workspace">
           <section className="main-view">
             {track && (
-              <section>
+              <section className="pattern-editor-stage">
                 {track.type === "synth" && (
                   <div className="octave-shell">
                     <div className="octave-editor-shell">

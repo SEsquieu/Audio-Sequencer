@@ -4,6 +4,7 @@
   background: radial-gradient(circle at 20% 10%, #1e293b 0%, #0b1020 45%, #020617 100%);
   line-height: 1.4;
   --pattern-editor-frame-height: 18.2rem;
+  --pattern-editor-stage-min-height: 19.2rem;
 }
 
 * {
@@ -936,6 +937,10 @@ select {
   --row-gap: 0rem;
 }
 
+.pattern-editor-stage {
+  min-height: var(--pattern-editor-stage-min-height);
+}
+
 .editor-sweep {
   position: absolute;
   top: -0.05rem;
@@ -967,8 +972,7 @@ select {
 .octave-grid-viewport {
   display: grid;
   overflow: hidden;
-  min-height: 0;
-  height: var(--pattern-editor-frame-height);
+  min-height: var(--pattern-editor-frame-height);
   perspective: 780px;
   transform: translateY(calc(var(--octave-scrub-offset, 0px) * -0.45));
   transition: transform 80ms linear;
@@ -1413,6 +1417,7 @@ select {
 @media (max-width: 899px) {
   :root {
     --pattern-editor-frame-height: 16.2rem;
+    --pattern-editor-stage-min-height: 17.1rem;
   }
 
   .panel {
