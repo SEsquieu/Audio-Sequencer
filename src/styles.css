@@ -457,6 +457,7 @@ select {
 
 .timeline-rows-wrap {
   position: relative;
+  overflow: hidden;
 }
 
 .timeline-loop-strip-shell {
@@ -930,7 +931,7 @@ select {
 .timeline-global-sweep {
   position: absolute;
   top: 0;
-  bottom: 0;
+  bottom: 0.62rem;
   width: 2px;
   background: #22d3ee;
   box-shadow: 0 0 10px rgba(34, 211, 238, 0.75);
@@ -938,6 +939,32 @@ select {
   pointer-events: none;
   z-index: 4;
   transition: left 60ms linear;
+}
+
+.timeline-add-bars-tail {
+  position: absolute;
+  top: 0;
+  bottom: 0.75rem;
+  height: auto;
+  max-height: none;
+  width: 0.9rem;
+  border: 1px solid #475569;
+  border-radius: 0.35rem;
+  background: #111827;
+  color: #e2e8f0;
+  font-weight: 700;
+  font-size: 0.72rem;
+  line-height: 1;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  padding: 0.12rem 0;
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .step-grid {
@@ -1611,6 +1638,11 @@ select {
   .bar-grid {
     overflow-x: auto;
     touch-action: pan-x;
+  }
+
+  .timeline-add-bars-tail {
+    width: 0.78rem;
+    font-size: 0.64rem;
   }
 
   .timeline-bar-action-bubbles {

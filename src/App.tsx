@@ -613,6 +613,7 @@ function App() {
   const timelineBarStridePx = timelineBarWidthPx + timelineBarGapPx;
   const timelineInnerPadPx = TIMELINE_BAR_INNER_PAD_REM * rootRemPx;
   const globalSweepBasePx = (timelineLabelRem + timelineRowGapRem + TIMELINE_BAR_INNER_PAD_REM) * rootRemPx;
+  const timelineGridOffsetPx = (timelineLabelRem + timelineRowGapRem) * rootRemPx;
   const globalSweepAbsolutePx =
     globalSweepBasePx + (loopRangeStart + loopRelativeBars) * timelineBarStridePx;
   const globalSweepViewportPx = globalSweepAbsolutePx - timelineScrollLeft;
@@ -636,6 +637,7 @@ function App() {
     loopStripResizeHitWidthPx,
     Math.max(0, timelineContentWidthPx - loopStripEndHitLeftPx)
   );
+  const addBarsTailLeftPx = timelineGridOffsetPx + timelineContentWidthPx - timelineScrollLeft + rootRemPx * 0.14;
   const availablePresets = useMemo(() => (track ? getPresetsForType(track.type) : []), [track]);
   const selectedPresetId = useMemo(
     () => (track ? getMatchingPresetId(track.type, track.instrument) : null),
@@ -1384,33 +1386,6 @@ function App() {
         op: "replace",
         path: `/tracks/${safeTrackIndex}/lane/${selectedBar}`,
         value: nextPatternId,
-      },
-    ]);
-  };
-
-  const createPatternForBar = () => {
-    if (!track || !patternId) {
-      return;
-    }
-
-    const newPatternId = nextPatternIdFromRecord(track.patterns);
-    const template =
-      pattern && ((track.type === "synth" && pattern.type === "synth") || (track.type === "drums" && pattern.type === "drums"))
-        ? deepClone(pattern)
-        : track.type === "synth"
-          ? { type: "synth" as const, steps: createEmptySynthSteps() }
-          : { type: "drums" as const, steps: createEmptyDrumSteps() };
-
-    createAndCommit("Create Pattern For Bar", [
-      {
-        op: "add",
-        path: `/tracks/${safeTrackIndex}/patterns/${newPatternId}`,
-        value: template,
-      },
-      {
-        op: "replace",
-        path: `/tracks/${safeTrackIndex}/lane/${selectedBar}`,
-        value: newPatternId,
       },
     ]);
   };
@@ -2178,9 +2153,6 @@ function App() {
           <>
             {isMobileTimelineLayout && (
               <div className="timeline-mobile-strip">
-                <span>
-                  Bar <strong>{selectedBar + 1}</strong> • Pattern <strong>{patternSelectValue}</strong>
-                </span>
                 <button
                   type="button"
                   className={lockToActive ? "timeline-lock-toggle on" : "timeline-lock-toggle"}
@@ -2191,6 +2163,9 @@ function App() {
                 >
                   {lockToActive ? "🔒" : "🔓"}
                 </button>
+                <span>
+                  Bar <strong>{selectedBar + 1}</strong> • Pattern <strong>{patternSelectValue}</strong>
+                </span>
                 <button
                   type="button"
                   className="timeline-toggle-button"
@@ -2204,6 +2179,18 @@ function App() {
             {(!isMobileTimelineLayout || mobileTimelineControlsOpen) && (
               <div className="timeline-controls">
                 <div className="timeline-controls-left">
+                  {!isMobileTimelineLayout && (
+                    <button
+                      type="button"
+                      className={lockToActive ? "timeline-lock-toggle on" : "timeline-lock-toggle"}
+                      onClick={() => setLockToActive((prev) => !prev)}
+                      aria-pressed={lockToActive}
+                      aria-label={lockToActive ? "Unlock from active bar" : "Lock to active bar"}
+                      title={lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
+                    >
+                      {lockToActive ? "🔒" : "🔓"}
+                    </button>
+                  )}
                   <span>
                     Bar: <strong>{selectedBar + 1}</strong>
                   </span>
@@ -2220,26 +2207,7 @@ function App() {
                       ))}
                     </select>
                   </label>
-                  <button type="button" onClick={createPatternForBar}>
-                    New Pattern
-                  </button>
-                  <button type="button" onClick={() => addBars(4)}>
-                    Add 4 Bars
-                  </button>
                 </div>
-                {!isMobileTimelineLayout && (
-                  <div className="timeline-controls-center">
-                    <button
-                      type="button"
-                      className={lockToActive ? "lock-active-button on" : "lock-active-button"}
-                      onClick={() => setLockToActive((prev) => !prev)}
-                      aria-pressed={lockToActive}
-                      title="Lock editor to currently playing bar"
-                    >
-                      {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
-                    </button>
-                  </div>
-                )}
                 <div className="timeline-controls-right">
                   <button type="button" onClick={() => addTrack("synth")}>
                     Add Synth Track
@@ -2352,6 +2320,18 @@ function App() {
               </div>
             </div>
           ))}
+          {song.tracks.length > 0 && (
+            <button
+              type="button"
+              className="timeline-add-bars-tail"
+              style={{ left: `${addBarsTailLeftPx}px` }}
+              onClick={() => addBars(4)}
+              aria-label="Add 4 bars"
+              title="Add 4 Bars"
+            >
+              +4
+            </button>
+          )}
         </div>
 
       </div>
