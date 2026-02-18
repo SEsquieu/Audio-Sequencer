@@ -1397,6 +1397,16 @@ select {
 }
 
 @media (max-width: 899px) {
+  .app-shell {
+    height: auto;
+    min-height: 100dvh;
+    grid-template-rows: auto auto auto;
+  }
+
+  .panel {
+    overflow: visible;
+  }
+
   .topbar {
     padding: 0.2rem 0.4rem;
     gap: 0.08rem;
@@ -1461,10 +1471,12 @@ select {
   }
 
   .workspace {
-    gap: 0.04rem;
+    gap: 0;
+    height: auto;
   }
 
   .main-view {
+    height: auto;
     padding: 0.3rem 0.5rem 0;
   }
 
