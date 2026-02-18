@@ -2257,7 +2257,19 @@ function App() {
                 >
                   {mutedTrackIds.includes(t.id) ? "🔇" : "🔊"}
                 </button>
-                {t.name}
+                <button
+                  type="button"
+                  className="timeline-track-open-sound"
+                  onClick={() => {
+                    setSelectedTrack(trackIndex);
+                    setIsAiOpen(false);
+                    setIsSoundOpen(true);
+                  }}
+                  aria-label={`Open sound controls for ${t.name}`}
+                  title={`Open sound controls for ${t.name}`}
+                >
+                  {t.name}
+                </button>
               </div>
               <div
                 className="bar-grid"
@@ -2574,19 +2586,6 @@ function App() {
           >
             Smart Patch
           </button>
-          {track && (
-            <button
-              type="button"
-              className="sound-dock-button"
-              onClick={() => {
-                setIsAiOpen(false);
-                setIsSoundOpen(true);
-              }}
-              aria-label="Open Sound panel"
-            >
-              Sound
-            </button>
-          )}
           <input
             ref={importFileInputRef}
             type="file"

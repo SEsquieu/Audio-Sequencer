@@ -106,15 +106,6 @@ select {
   font-weight: 600;
 }
 
-.sound-dock-button {
-  display: none;
-  border: 1px solid #475569;
-  background: #111827;
-  color: #e2e8f0;
-  border-radius: 0.5rem;
-  padding: 0.35rem 0.7rem;
-}
-
 .status-row {
   display: flex;
   justify-content: space-between;
@@ -810,6 +801,16 @@ select {
   font-weight: 600;
 }
 
+.timeline-track-open-sound {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  white-space: nowrap;
+}
+
 .mute-toggle {
   border: 1px solid #475569;
   background: #111827;
@@ -1440,13 +1441,6 @@ select {
     margin-left: auto;
   }
 
-  .sound-dock-button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    flex: 0 0 auto;
-  }
-
   .status-row {
     gap: 0.12rem;
     font-size: 0.64rem;
@@ -1675,10 +1669,6 @@ select {
     border-radius: 0;
     padding: 0.75rem;
     overflow: auto;
-  }
-
-  .sound-dock-button {
-    display: none;
   }
 
   .timeline-dock {
