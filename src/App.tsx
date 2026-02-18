@@ -386,6 +386,7 @@ function App() {
   });
   const timelineScrubberRef = useRef<HTMLDivElement | null>(null);
   const timelineScrubPointerIdRef = useRef<number | null>(null);
+  const timelinePatternWheelRef = useRef<HTMLDivElement | null>(null);
   const importFileInputRef = useRef<HTMLInputElement | null>(null);
   const timelineBarLongPressRef = useRef<{
     pointerId: number;
@@ -1585,6 +1586,34 @@ function App() {
     [createAndCommit, lockToActive, song.tracks]
   );
 
+  const assignPatternToSpecificBar = useCallback(
+    (trackIndex: number, bar: number, nextPatternId: string) => {
+      const targetTrack = song.tracks[trackIndex];
+      if (!targetTrack) {
+        return;
+      }
+      if (!targetTrack.patterns[nextPatternId]) {
+        return;
+      }
+      const currentPatternId = targetTrack.lane[bar] ?? "0";
+      if (currentPatternId === nextPatternId) {
+        return;
+      }
+      createAndCommit("Assign Pattern To Bar", [
+        {
+          op: "replace",
+          path: `/tracks/${trackIndex}/lane/${bar}`,
+          value: nextPatternId,
+        },
+      ]);
+      setSelectedTrack(trackIndex);
+      if (!lockToActive) {
+        setSelectedBar(bar);
+      }
+    },
+    [createAndCommit, lockToActive, song.tracks]
+  );
+
   const createBlankPatternAtBar = useCallback(
     (trackIndex: number, bar: number) => {
       const targetTrack = song.tracks[trackIndex];
@@ -1622,6 +1651,18 @@ function App() {
     },
     [createAndCommit, lockToActive, song.tracks]
   );
+
+  const timelineActionTrack = timelineBarAction ? song.tracks[timelineBarAction.trackIndex] : null;
+  const timelineActionPatternId =
+    timelineBarAction && timelineActionTrack ? (timelineActionTrack.lane[timelineBarAction.bar] ?? "0") : "0";
+  const timelineActionPatternIds = useMemo(() => {
+    if (!timelineActionTrack) {
+      return [];
+    }
+    return Object.keys(timelineActionTrack.patterns).sort((a, b) => Number(a) - Number(b));
+  }, [timelineActionTrack]);
+  const timelineActionCanDupe =
+    timelineActionPatternId !== "0" && Boolean(timelineActionTrack?.patterns[timelineActionPatternId]);
 
   const onImportSongFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1844,6 +1885,21 @@ function App() {
   }, [cancelTimelineBarLongPress]);
 
   useEffect(() => () => clearTimelineBarLongPressTimer(), [clearTimelineBarLongPressTimer]);
+
+  useEffect(() => {
+    if (!timelineBarAction || !timelinePatternWheelRef.current) {
+      return;
+    }
+    const selectedEl = timelinePatternWheelRef.current.querySelector<HTMLButtonElement>(
+      `[data-pattern-id="${timelineActionPatternId}"]`
+    );
+    if (!selectedEl) {
+      return;
+    }
+    window.requestAnimationFrame(() => {
+      selectedEl.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }, [timelineActionPatternId, timelineBarAction]);
 
   const applyOctaveBase = useCallback(
     (target: number) => {
@@ -2666,59 +2722,69 @@ function App() {
               className="timeline-bar-action-bubbles"
               style={
                 {
-                  "--timeline-action-x": `${timelineBarAction.clientX}px`,
                   "--timeline-action-y": `${timelineBarAction.clientY}px`,
                 } as CSSProperties
               }
               role="dialog"
               aria-label="Pattern controls"
             >
-              <button
-                type="button"
-                disabled={
-                  (() => {
-                    const actionTrack = song.tracks[timelineBarAction.trackIndex];
-                    if (!actionTrack) {
-                      return true;
-                    }
-                    const actionPatternId = actionTrack.lane[timelineBarAction.bar] ?? "0";
-                    return actionPatternId === "0" || !actionTrack.patterns[actionPatternId];
-                  })()
-                }
-                onClick={() => setTimelineBarAction(null)}
-              >
-                Dupe
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  createBlankPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
-                  setTimelineBarAction(null);
-                }}
-              >
-                New
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  clearPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
-                  setTimelineBarAction(null);
-                }}
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  toggleSingleBarLoop(timelineBarAction.trackIndex, timelineBarAction.bar);
-                  setTimelineBarAction(null);
-                }}
-              >
-                Loop
-              </button>
-              <button type="button" className="cancel" onClick={() => setTimelineBarAction(null)}>
-                Cancel
-              </button>
+              <div className="timeline-pattern-wheel-shell">
+                <div className="timeline-pattern-wheel-title">Pattern</div>
+                <div className="timeline-pattern-wheel-wrap">
+                  <div
+                    ref={timelinePatternWheelRef}
+                    className="timeline-pattern-wheel"
+                    role="listbox"
+                    aria-label="Select pattern"
+                  >
+                    {timelineActionPatternIds.map((id) => (
+                      <button
+                        key={id}
+                        type="button"
+                        className={id === timelineActionPatternId ? "active" : ""}
+                        data-pattern-id={id}
+                        role="option"
+                        aria-selected={id === timelineActionPatternId}
+                        onClick={() => assignPatternToSpecificBar(timelineBarAction.trackIndex, timelineBarAction.bar, id)}
+                      >
+                        {id}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="timeline-bar-action-button-row">
+                <button type="button" disabled={!timelineActionCanDupe} onClick={() => setTimelineBarAction(null)}>
+                  Dupe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    createBlankPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                    setTimelineBarAction(null);
+                  }}
+                >
+                  New
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                    setTimelineBarAction(null);
+                  }}
+                >
+                  Clear
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleSingleBarLoop(timelineBarAction.trackIndex, timelineBarAction.bar);
+                    setTimelineBarAction(null);
+                  }}
+                >
+                  Loop
+                </button>
+              </div>
             </div>
           </>
         )}
