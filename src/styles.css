@@ -1407,8 +1407,8 @@ select {
   }
 
   .topbar {
-    padding: 0.35rem 0.45rem;
-    gap: 0.2rem;
+    padding: 0.24rem 0.4rem;
+    gap: 0.12rem;
   }
 
   .topbar h1 {
@@ -1419,14 +1419,14 @@ select {
     flex-wrap: nowrap;
     overflow-x: auto;
     scrollbar-width: thin;
-    gap: 0.22rem;
+    gap: 0.18rem;
   }
 
   .top-controls button {
-    min-height: 1.5rem;
-    padding: 0.15rem 0.4rem;
+    min-height: 1.34rem;
+    padding: 0.1rem 0.34rem;
     border-radius: 0.4rem;
-    font-size: 0.72rem;
+    font-size: 0.69rem;
   }
 
   .top-controls .mobile-hide {
@@ -1445,8 +1445,9 @@ select {
   }
 
   .status-row {
-    gap: 0.25rem;
-    font-size: 0.72rem;
+    gap: 0.16rem;
+    font-size: 0.68rem;
+    min-height: 0;
   }
 
   .status-row .master-volume,
@@ -1455,21 +1456,28 @@ select {
   }
 
   .status-row label {
-    gap: 0.3rem;
+    gap: 0.18rem;
   }
 
   .status-row label input[type="range"] {
     display: none;
   }
 
+  .tempo-value-input {
+    width: 2.7rem;
+    min-width: 2.7rem;
+    padding: 0.04rem 0.22rem;
+    font-size: 0.7rem;
+  }
+
   .workspace {
-    gap: 0.18rem;
+    gap: 0;
     height: auto;
   }
 
   .main-view {
     height: auto;
-    padding: 0.4rem 0.5rem 0.1rem;
+    padding: 0.34rem 0.5rem 0;
   }
 
   .sound-column {
@@ -1505,7 +1513,8 @@ select {
   }
 
   .timeline-dock {
-    padding: 0.16rem 0.5rem 0.42rem;
+    border-top: 0;
+    padding: 0.02rem 0.5rem 0.4rem;
     height: clamp(6.8rem, 29dvh, 9.4rem);
     max-height: 31dvh;
   }
