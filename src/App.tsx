@@ -2171,6 +2171,337 @@ function App() {
       </div>
     ));
 
+  const timelineDock = (
+    <section className={["timeline-dock", timelineBarAction ? "bar-action-mode" : ""].join(" ")} aria-label="Timeline">
+      <div className="timeline-content">
+        {track && (
+          <>
+            {isMobileTimelineLayout && (
+              <div className="timeline-mobile-strip">
+                <span>
+                  Bar <strong>{selectedBar + 1}</strong> • Pattern <strong>{patternSelectValue}</strong>
+                </span>
+                <button
+                  type="button"
+                  className="timeline-toggle-button"
+                  onClick={() => setMobileTimelineControlsOpen((prev) => !prev)}
+                  aria-expanded={mobileTimelineControlsOpen}
+                >
+                  {mobileTimelineControlsOpen ? "Hide Controls" : "Show Controls"}
+                </button>
+              </div>
+            )}
+            {(!isMobileTimelineLayout || mobileTimelineControlsOpen) && (
+              <div className="timeline-controls">
+                <div className="timeline-controls-left">
+                  <span>
+                    Bar: <strong>{selectedBar + 1}</strong>
+                  </span>
+                  <label>
+                    Pattern
+                    <select value={patternSelectValue} onChange={(e) => assignPatternToBar(e.target.value)}>
+                      <option value="__unassigned" disabled>
+                        Unassigned
+                      </option>
+                      {trackPatternIds.map((id) => (
+                        <option key={id} value={id}>
+                          {id}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button type="button" onClick={createPatternForBar}>
+                    New Pattern
+                  </button>
+                  <button type="button" onClick={() => addBars(4)}>
+                    Add 4 Bars
+                  </button>
+                </div>
+                <div className="timeline-controls-center">
+                  <button
+                    type="button"
+                    className={lockToActive ? "lock-active-button on" : "lock-active-button"}
+                    onClick={() => setLockToActive((prev) => !prev)}
+                    aria-pressed={lockToActive}
+                    title="Lock editor to currently playing bar"
+                  >
+                    {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
+                  </button>
+                </div>
+                <div className="timeline-controls-right">
+                  <button type="button" onClick={() => addTrack("synth")}>
+                    Add Synth Track
+                  </button>
+                  <button type="button" onClick={() => addTrack("drums")}>
+                    Add Drums Track
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        <div className="timeline-rows-wrap" onWheel={onTimelineWheel}>
+          {shouldShowGlobalSweep && (
+            <div className="timeline-global-sweep" style={{ left: `${globalSweepViewportPx}px` }} aria-hidden="true" />
+          )}
+          {song.tracks.map((t, trackIndex) => (
+            <div key={t.id} className={mutedTrackIds.includes(t.id) ? "timeline-row muted" : "timeline-row"}>
+              <div className={safeTrackIndex === trackIndex ? "timeline-track-label active" : "timeline-track-label"}>
+                <button
+                  type="button"
+                  className={mutedTrackIds.includes(t.id) ? "mute-toggle muted" : "mute-toggle"}
+                  onClick={() => toggleTrackMute(t.id)}
+                  aria-label={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
+                  title={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
+                >
+                  {mutedTrackIds.includes(t.id) ? "🔇" : "🔊"}
+                </button>
+                {t.name}
+              </div>
+              <div
+                className="bar-grid"
+                ref={(el) => {
+                  timelineRowRefs.current[trackIndex] = el;
+                }}
+                onScroll={(event) => {
+                  syncTimelineScroll(trackIndex, event.currentTarget.scrollLeft);
+                }}
+              >
+                <div
+                  className="bar-grid-inner"
+                  style={{
+                    gridTemplateColumns: `repeat(${song.bars}, 2.15rem)`,
+                  }}
+                >
+                  {loopRange && (
+                    <>
+                      {loopStripActiveLeftPx > 0 && (
+                        <div
+                          className="timeline-loop-mask left"
+                          style={{ width: `${loopStripActiveLeftPx}px` }}
+                          aria-hidden="true"
+                        />
+                      )}
+                      {loopStripActiveLeftPx + loopStripActiveWidthPx < timelineContentWidthPx && (
+                        <div
+                          className="timeline-loop-mask right"
+                          style={{
+                            left: `${loopStripActiveLeftPx + loopStripActiveWidthPx}px`,
+                            width: `${Math.max(
+                              0,
+                              timelineContentWidthPx - (loopStripActiveLeftPx + loopStripActiveWidthPx)
+                            )}px`,
+                          }}
+                          aria-hidden="true"
+                        />
+                      )}
+                    </>
+                  )}
+                  {barOptions.map((bar) => (
+                    <button
+                      key={`${t.id}-${bar}`}
+                      className={[
+                        "bar-cell",
+                        selectedBar === bar && safeTrackIndex === trackIndex ? "active" : "",
+                        t.lane[bar] !== "0" ? "assigned" : "",
+                        t.lane[bar] === "0" ? "unassigned" : "",
+                      ].join(" ")}
+                      onClick={() => {
+                        if (suppressBarClickRef.current) {
+                          suppressBarClickRef.current = false;
+                          return;
+                        }
+                        setSelectedTrack(trackIndex);
+                        if (!lockToActive) {
+                          setSelectedBar(bar);
+                        }
+                      }}
+                      onContextMenu={(event) => onTimelineBarContextMenu(trackIndex, bar, event)}
+                      onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
+                      data-bar-index={bar}
+                    >
+                      {t.lane[bar]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="timeline-loop-strip-row">
+          <div className="timeline-loop-strip-shell">
+            <div
+              ref={loopStripRef}
+              className="timeline-loop-strip"
+              role="slider"
+              aria-label="Loop range"
+              aria-valuemin={1}
+              aria-valuemax={song.bars}
+              aria-valuenow={loopRange ? loopRange.end - loopRange.start + 1 : 0}
+            >
+              <div
+                className="timeline-loop-strip-inner"
+                style={
+                  {
+                    width: `${timelineContentWidthPx}px`,
+                    transform: `translateX(${-timelineScrollLeft}px)`,
+                    "--loop-strip-bar-px": `${timelineBarWidthPx}px`,
+                    "--loop-strip-stride-px": `${timelineBarStridePx}px`,
+                  } as CSSProperties
+                }
+              >
+                {loopRange && (
+                  <>
+                    <div
+                      className="timeline-loop-strip-resize-hit start"
+                      style={{
+                        left: `${loopStripStartHitLeftPx}px`,
+                        width: `${loopStripStartHitWidthPx}px`,
+                      }}
+                      onPointerDown={onLoopStripStartHandlePointerDown}
+                    />
+                    <div
+                      className="timeline-loop-strip-active-hit"
+                      style={{
+                        left: `${loopStripActiveLeftPx}px`,
+                        width: `${loopStripActiveWidthPx}px`,
+                      }}
+                      onPointerDown={onLoopStripActivePointerDown}
+                    >
+                      <div className="timeline-loop-strip-active" />
+                    </div>
+                    <div
+                      className="timeline-loop-strip-resize-hit end"
+                      style={{
+                        left: `${loopStripEndHitLeftPx}px`,
+                        width: `${loopStripEndHitWidthPx}px`,
+                      }}
+                      onPointerDown={onLoopStripEndHandlePointerDown}
+                    />
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {timelineBarAction && (
+        <>
+          <button
+            type="button"
+            className="timeline-bar-action-backdrop"
+            onClick={() => setTimelineBarAction(null)}
+            aria-label="Dismiss timeline actions"
+          />
+          <div
+            className="timeline-bar-action-bubbles"
+            style={
+              {
+                "--timeline-action-y": `${timelineBarAction.clientY}px`,
+              } as CSSProperties
+            }
+            role="dialog"
+            aria-label="Pattern controls"
+          >
+            <div className="timeline-pattern-wheel-shell">
+              <div className="timeline-pattern-wheel-title">Pattern</div>
+              <div className="timeline-pattern-wheel-wrap">
+                <div
+                  ref={timelinePatternWheelRef}
+                  className="timeline-pattern-wheel"
+                  role="listbox"
+                  aria-label="Select pattern"
+                >
+                  {timelineActionPatternIds.map((id) => {
+                    const previewPattern = timelineActionTrack?.patterns[id];
+                    const previewRects = getPatternPreviewRects(previewPattern);
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        className={id === timelineActionPatternId ? "active" : ""}
+                        data-pattern-id={id}
+                        role="option"
+                        aria-selected={id === timelineActionPatternId}
+                        onClick={() => {
+                          assignPatternToSpecificBar(timelineBarAction.trackIndex, timelineBarAction.bar, id);
+                          setTimelineBarAction(null);
+                        }}
+                      >
+                        <span className="timeline-pattern-option-content">
+                          <span className="timeline-pattern-mini-preview" aria-hidden="true">
+                            <svg
+                              viewBox={`0 0 ${PATTERN_PREVIEW_COLS} ${PATTERN_PREVIEW_HEIGHT}`}
+                              preserveAspectRatio="none"
+                            >
+                              {previewRects.map((rect, idx) => (
+                                <rect
+                                  key={`${id}-p-${idx}`}
+                                  x={rect.x}
+                                  y={rect.y}
+                                  width={rect.width}
+                                  height={rect.height}
+                                  className={rect.kind}
+                                />
+                              ))}
+                            </svg>
+                          </span>
+                          <span className="timeline-pattern-option-id">{id}</span>
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+            <div className="timeline-bar-action-button-row">
+              <button
+                type="button"
+                disabled={!timelineActionCanDupe}
+                onClick={() => {
+                  duplicatePatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
+                Dupe
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  createBlankPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
+                New
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
+                Clear
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  toggleSingleBarLoop(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
+                Loop
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+
   return (
     <div
       className="app-shell"
@@ -2600,343 +2931,10 @@ function App() {
             </aside>
           )}
         </div>
+        {isMobileTimelineLayout && timelineDock}
       </main>
 
-      <section
-        className={["timeline-dock", timelineBarAction ? "bar-action-mode" : ""].join(" ")}
-        aria-label="Timeline"
-      >
-        <div className="timeline-content">
-          {track && (
-            <>
-              {isMobileTimelineLayout && (
-                <div className="timeline-mobile-strip">
-                  <span>
-                    Bar <strong>{selectedBar + 1}</strong> • Pattern <strong>{patternSelectValue}</strong>
-                  </span>
-                  <button
-                    type="button"
-                    className="timeline-toggle-button"
-                    onClick={() => setMobileTimelineControlsOpen((prev) => !prev)}
-                    aria-expanded={mobileTimelineControlsOpen}
-                  >
-                    {mobileTimelineControlsOpen ? "Hide Controls" : "Show Controls"}
-                  </button>
-                </div>
-              )}
-              {(!isMobileTimelineLayout || mobileTimelineControlsOpen) && (
-                <div className="timeline-controls">
-                  <div className="timeline-controls-left">
-                    <span>
-                      Bar: <strong>{selectedBar + 1}</strong>
-                    </span>
-                    <label>
-                      Pattern
-                      <select value={patternSelectValue} onChange={(e) => assignPatternToBar(e.target.value)}>
-                        <option value="__unassigned" disabled>
-                          Unassigned
-                        </option>
-                        {trackPatternIds.map((id) => (
-                          <option key={id} value={id}>
-                            {id}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <button type="button" onClick={createPatternForBar}>
-                      New Pattern
-                    </button>
-                    <button type="button" onClick={() => addBars(4)}>
-                      Add 4 Bars
-                    </button>
-                  </div>
-                  <div className="timeline-controls-center">
-                    <button
-                      type="button"
-                      className={lockToActive ? "lock-active-button on" : "lock-active-button"}
-                      onClick={() => setLockToActive((prev) => !prev)}
-                      aria-pressed={lockToActive}
-                      title="Lock editor to currently playing bar"
-                    >
-                      {lockToActive ? "Lock To Active: On" : "Lock To Active: Off"}
-                    </button>
-                  </div>
-                  <div className="timeline-controls-right">
-                    <button type="button" onClick={() => addTrack("synth")}>
-                      Add Synth Track
-                    </button>
-                    <button type="button" onClick={() => addTrack("drums")}>
-                      Add Drums Track
-                    </button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
-          <div className="timeline-rows-wrap" onWheel={onTimelineWheel}>
-            {shouldShowGlobalSweep && (
-              <div
-                className="timeline-global-sweep"
-                style={{ left: `${globalSweepViewportPx}px` }}
-                aria-hidden="true"
-              />
-            )}
-            {song.tracks.map((t, trackIndex) => (
-              <div
-                key={t.id}
-                className={mutedTrackIds.includes(t.id) ? "timeline-row muted" : "timeline-row"}
-              >
-                <div className={safeTrackIndex === trackIndex ? "timeline-track-label active" : "timeline-track-label"}>
-                  <button
-                    type="button"
-                    className={mutedTrackIds.includes(t.id) ? "mute-toggle muted" : "mute-toggle"}
-                    onClick={() => toggleTrackMute(t.id)}
-                    aria-label={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
-                    title={mutedTrackIds.includes(t.id) ? `Unmute ${t.name}` : `Mute ${t.name}`}
-                  >
-                    {mutedTrackIds.includes(t.id) ? "🔇" : "🔊"}
-                  </button>
-                  {t.name}
-                </div>
-                <div
-                  className="bar-grid"
-                  ref={(el) => {
-                    timelineRowRefs.current[trackIndex] = el;
-                  }}
-                  onScroll={(event) => {
-                    syncTimelineScroll(trackIndex, event.currentTarget.scrollLeft);
-                  }}
-                >
-                  <div
-                    className="bar-grid-inner"
-                    style={{
-                      gridTemplateColumns: `repeat(${song.bars}, 2.15rem)`,
-                    }}
-                  >
-                  {loopRange && (
-                    <>
-                      {loopStripActiveLeftPx > 0 && (
-                        <div
-                          className="timeline-loop-mask left"
-                          style={{ width: `${loopStripActiveLeftPx}px` }}
-                          aria-hidden="true"
-                        />
-                      )}
-                      {loopStripActiveLeftPx + loopStripActiveWidthPx < timelineContentWidthPx && (
-                        <div
-                          className="timeline-loop-mask right"
-                          style={{
-                            left: `${loopStripActiveLeftPx + loopStripActiveWidthPx}px`,
-                            width: `${Math.max(0, timelineContentWidthPx - (loopStripActiveLeftPx + loopStripActiveWidthPx))}px`,
-                          }}
-                          aria-hidden="true"
-                        />
-                      )}
-                    </>
-                  )}
-                  {barOptions.map((bar) => (
-                    <button
-                      key={`${t.id}-${bar}`}
-                      className={[
-                        "bar-cell",
-                        selectedBar === bar && safeTrackIndex === trackIndex ? "active" : "",
-                        t.lane[bar] !== "0" ? "assigned" : "",
-                        t.lane[bar] === "0" ? "unassigned" : "",
-                      ].join(" ")}
-                      onClick={() => {
-                        if (suppressBarClickRef.current) {
-                          suppressBarClickRef.current = false;
-                          return;
-                        }
-                        setSelectedTrack(trackIndex);
-                        if (!lockToActive) {
-                          setSelectedBar(bar);
-                        }
-                      }}
-                      onContextMenu={(event) => onTimelineBarContextMenu(trackIndex, bar, event)}
-                      onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
-                      data-bar-index={bar}
-                    >
-                      {t.lane[bar]}
-                    </button>
-                  ))}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="timeline-loop-strip-row">
-            <div className="timeline-loop-strip-shell">
-              <div
-                ref={loopStripRef}
-                className="timeline-loop-strip"
-                role="slider"
-                aria-label="Loop range"
-                aria-valuemin={1}
-                aria-valuemax={song.bars}
-                aria-valuenow={loopRange ? loopRange.end - loopRange.start + 1 : 0}
-                >
-                <div
-                  className="timeline-loop-strip-inner"
-                  style={
-                    {
-                      width: `${timelineContentWidthPx}px`,
-                      transform: `translateX(${-timelineScrollLeft}px)`,
-                      "--loop-strip-bar-px": `${timelineBarWidthPx}px`,
-                      "--loop-strip-stride-px": `${timelineBarStridePx}px`,
-                    } as CSSProperties
-                  }
-                >
-                  {loopRange && (
-                    <>
-                      <div
-                        className="timeline-loop-strip-resize-hit start"
-                        style={{
-                          left: `${loopStripStartHitLeftPx}px`,
-                          width: `${loopStripStartHitWidthPx}px`,
-                        }}
-                        onPointerDown={onLoopStripStartHandlePointerDown}
-                      />
-                      <div
-                        className="timeline-loop-strip-active-hit"
-                        style={{
-                          left: `${loopStripActiveLeftPx}px`,
-                          width: `${loopStripActiveWidthPx}px`,
-                        }}
-                        onPointerDown={onLoopStripActivePointerDown}
-                      >
-                        <div className="timeline-loop-strip-active" />
-                      </div>
-                      <div
-                        className="timeline-loop-strip-resize-hit end"
-                        style={{
-                          left: `${loopStripEndHitLeftPx}px`,
-                          width: `${loopStripEndHitWidthPx}px`,
-                        }}
-                        onPointerDown={onLoopStripEndHandlePointerDown}
-                      />
-                    </>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {timelineBarAction && (
-          <>
-            <button
-              type="button"
-              className="timeline-bar-action-backdrop"
-              onClick={() => setTimelineBarAction(null)}
-              aria-label="Dismiss timeline actions"
-            />
-            <div
-              className="timeline-bar-action-bubbles"
-              style={
-                {
-                  "--timeline-action-y": `${timelineBarAction.clientY}px`,
-                } as CSSProperties
-              }
-              role="dialog"
-              aria-label="Pattern controls"
-            >
-              <div className="timeline-pattern-wheel-shell">
-                <div className="timeline-pattern-wheel-title">Pattern</div>
-                <div className="timeline-pattern-wheel-wrap">
-                  <div
-                    ref={timelinePatternWheelRef}
-                    className="timeline-pattern-wheel"
-                    role="listbox"
-                    aria-label="Select pattern"
-                  >
-                    {timelineActionPatternIds.map((id) => {
-                      const previewPattern = timelineActionTrack?.patterns[id];
-                      const previewRects = getPatternPreviewRects(previewPattern);
-                      return (
-                        <button
-                          key={id}
-                          type="button"
-                          className={id === timelineActionPatternId ? "active" : ""}
-                          data-pattern-id={id}
-                          role="option"
-                          aria-selected={id === timelineActionPatternId}
-                          onClick={() => {
-                            assignPatternToSpecificBar(timelineBarAction.trackIndex, timelineBarAction.bar, id);
-                            setTimelineBarAction(null);
-                          }}
-                        >
-                          <span className="timeline-pattern-option-content">
-                            <span className="timeline-pattern-mini-preview" aria-hidden="true">
-                              <svg
-                                viewBox={`0 0 ${PATTERN_PREVIEW_COLS} ${PATTERN_PREVIEW_HEIGHT}`}
-                                preserveAspectRatio="none"
-                              >
-                                {previewRects.map((rect, idx) => (
-                                  <rect
-                                    key={`${id}-p-${idx}`}
-                                    x={rect.x}
-                                    y={rect.y}
-                                    width={rect.width}
-                                    height={rect.height}
-                                    className={rect.kind}
-                                  />
-                                ))}
-                              </svg>
-                            </span>
-                            <span className="timeline-pattern-option-id">{id}</span>
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-              <div className="timeline-bar-action-button-row">
-                <button
-                  type="button"
-                  disabled={!timelineActionCanDupe}
-                  onClick={() => {
-                    duplicatePatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
-                    setTimelineBarAction(null);
-                  }}
-                >
-                  Dupe
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    createBlankPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
-                    setTimelineBarAction(null);
-                  }}
-                >
-                  New
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
-                    setTimelineBarAction(null);
-                  }}
-                >
-                  Clear
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    toggleSingleBarLoop(timelineBarAction.trackIndex, timelineBarAction.bar);
-                    setTimelineBarAction(null);
-                  }}
-                >
-                  Loop
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </section>
+      {!isMobileTimelineLayout && timelineDock}
 
       {isSoundOpen && (
         <button
