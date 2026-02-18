@@ -575,30 +575,45 @@ select {
 }
 
 .timeline-pattern-option-content {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: inline-grid;
+  grid-template-columns: auto auto;
   align-items: center;
-  gap: 0.5rem;
-  width: 100%;
+  justify-content: start;
+  gap: 0.42rem;
+  width: auto;
+  max-width: 100%;
 }
 
 .timeline-pattern-mini-preview {
-  display: grid;
-  grid-template-columns: repeat(16, minmax(0, 1fr));
-  gap: 0.1rem;
-  align-items: end;
-  min-height: 0.7rem;
+  display: inline-flex;
+  align-items: stretch;
+  justify-content: stretch;
+  width: 4.6rem;
+  min-width: 4.6rem;
+  height: 1.18rem;
+  padding: 0.12rem;
+  border-radius: 0.24rem;
+  border: 1px solid rgba(71, 85, 105, 0.82);
+  background: rgba(2, 6, 23, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.7);
 }
 
-.timeline-pattern-mini-preview span {
+.timeline-pattern-mini-preview svg {
+  width: 100%;
+  height: 100%;
   display: block;
-  border-radius: 2px;
-  height: calc(0.28rem + var(--step-level, 0.18) * 0.5rem);
-  background: rgba(100, 116, 139, 0.4);
 }
 
-.timeline-pattern-mini-preview span.on {
-  background: rgba(34, 211, 238, 0.76);
+.timeline-pattern-mini-preview rect {
+  shape-rendering: auto;
+}
+
+.timeline-pattern-mini-preview rect.synth {
+  fill: rgba(34, 211, 238, 0.82);
+}
+
+.timeline-pattern-mini-preview rect.drum {
+  fill: rgba(56, 189, 248, 0.68);
 }
 
 .timeline-pattern-option-id {
@@ -1514,11 +1529,14 @@ select {
   }
 
   .timeline-pattern-option-content {
-    gap: 0.35rem;
+    gap: 0.3rem;
   }
 
   .timeline-pattern-mini-preview {
-    gap: 0.08rem;
+    width: 4rem;
+    min-width: 4rem;
+    height: 1rem;
+    padding: 0.1rem;
   }
 
   .timeline-bar-action-button-row {

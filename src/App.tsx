@@ -2,6 +2,7 @@ import {
   CSSProperties,
   ChangeEvent,
   FormEvent,
+  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
@@ -35,6 +36,8 @@ const TIMELINE_BAR_WIDTH_REM = 2.15;
 const TIMELINE_BAR_GAP_REM = 0.3;
 const TIMELINE_BAR_LONG_PRESS_MS = 420;
 const TIMELINE_BAR_LONG_PRESS_MOVE_PX = 10;
+const PATTERN_PREVIEW_COLS = 16;
+const PATTERN_PREVIEW_HEIGHT = 24;
 
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const deepClone = <T,>(value: T): T => {
@@ -77,11 +80,18 @@ const normalizeSynthCell = (cell: unknown): SynthStep[] => {
 };
 
 const nextPatternIdFromRecord = (patterns: Record<string, unknown>): string => {
-  const maxId = Object.keys(patterns).reduce((max, id) => {
+  const used = new Set<number>();
+  Object.keys(patterns).forEach((id) => {
     const n = Number(id);
-    return Number.isFinite(n) ? Math.max(max, n) : max;
-  }, 0);
-  return String(maxId + 1);
+    if (Number.isInteger(n) && n > 0) {
+      used.add(n);
+    }
+  });
+  let candidate = 1;
+  while (used.has(candidate)) {
+    candidate += 1;
+  }
+  return String(candidate);
 };
 
 const createEmptySynthSteps = (): SynthStep[][] => Array.from({ length: 16 }, () => []);
@@ -146,20 +156,72 @@ const findSynthNoteAtStep = (
   return null;
 };
 
-const getPatternStepPreviewLevels = (pattern: Pattern | undefined): number[] => {
+interface PatternPreviewRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  kind: "synth" | "drum";
+}
+
+const getPatternPreviewRects = (pattern: Pattern | undefined): PatternPreviewRect[] => {
   if (!pattern) {
-    return Array.from({ length: 16 }, () => 0);
+    return [];
   }
+
+  const rects: PatternPreviewRect[] = [];
   if (pattern.type === "synth") {
-    return pattern.steps.map((step) => {
+    const pitches = pattern.steps.flatMap((step) =>
+      normalizeSynthCell(step).map((note) => Math.max(MIN_VISIBLE_PITCH, Math.min(MAX_VISIBLE_PITCH, note.pitch)))
+    );
+    if (pitches.length === 0) {
+      return rects;
+    }
+    const minPitch = Math.min(...pitches);
+    const maxPitch = Math.max(...pitches);
+    const span = Math.max(11, maxPitch - minPitch);
+    const halfPad = (span - (maxPitch - minPitch)) / 2;
+    const low = minPitch - halfPad;
+    const high = maxPitch + halfPad;
+    const range = Math.max(1, high - low);
+    pattern.steps.forEach((step, stepIndex) => {
       const notes = normalizeSynthCell(step);
-      return Math.max(0, Math.min(1, notes.length / 4));
+      notes.forEach((note) => {
+        const clampedPitch = Math.max(MIN_VISIBLE_PITCH, Math.min(MAX_VISIBLE_PITCH, note.pitch));
+        const normalized = (clampedPitch - low) / range;
+        const y = Math.max(
+          0,
+          Math.min(PATTERN_PREVIEW_HEIGHT - 1.6, (1 - normalized) * (PATTERN_PREVIEW_HEIGHT - 1.6))
+        );
+        const maxWidth = Math.max(0.45, PATTERN_PREVIEW_COLS - stepIndex);
+        const width = Math.max(0.45, Math.min(maxWidth, Math.max(1, note.length)));
+        rects.push({
+          x: stepIndex,
+          y,
+          width,
+          height: 1.6,
+          kind: "synth",
+        });
+      });
     });
+    return rects;
   }
-  return pattern.steps.map((step) => {
-    const total = Number(step.kick > 0) + Number(step.snare > 0) + Number(step.hat > 0);
-    return Math.max(0, Math.min(1, total / 3));
+
+  const hatY = 4;
+  const snareY = 11;
+  const kickY = 18;
+  pattern.steps.forEach((step, stepIndex) => {
+    if (step.kick > 0) {
+      rects.push({ x: stepIndex + 0.08, y: kickY, width: 0.84, height: 2.2, kind: "drum" });
+    }
+    if (step.snare > 0) {
+      rects.push({ x: stepIndex + 0.08, y: snareY, width: 0.84, height: 2.2, kind: "drum" });
+    }
+    if (step.hat > 0) {
+      rects.push({ x: stepIndex + 0.08, y: hatY, width: 0.84, height: 2.2, kind: "drum" });
+    }
   });
+  return rects;
 };
 
 const getDefaultOctaveForTrack = (track?: Track): number => {
@@ -1545,6 +1607,24 @@ function App() {
     clearTimelineBarLongPressTimer();
   }, [clearTimelineBarLongPressTimer]);
 
+  const openTimelineBarActionMenu = useCallback(
+    (trackIndex: number, bar: number, clientX: number, clientY: number) => {
+      suppressBarClickRef.current = true;
+      setSelectedTrack(trackIndex);
+      if (!lockToActive) {
+        setSelectedBar(bar);
+      }
+      setLoopDrag(null);
+      setTimelineBarAction({
+        trackIndex,
+        bar,
+        clientX,
+        clientY,
+      });
+    },
+    [lockToActive]
+  );
+
   const toggleSingleBarLoop = useCallback(
     (trackIndex: number, bar: number) => {
       setSelectedTrack(trackIndex);
@@ -1570,30 +1650,13 @@ function App() {
       if (targetPatternId === "0") {
         return;
       }
-
-      const remainingUseCount = targetTrack.lane.reduce((count, lanePatternId, laneIndex) => {
-        if (laneIndex === bar) {
-          return count;
-        }
-        return lanePatternId === targetPatternId ? count + 1 : count;
-      }, 0);
-
-      const ops: JsonPatchOp[] = [
+      createAndCommit("Clear Bar Pattern", [
         {
           op: "replace",
           path: `/tracks/${trackIndex}/lane/${bar}`,
           value: "0",
         },
-      ];
-
-      if (remainingUseCount === 0 && targetTrack.patterns[targetPatternId]) {
-        ops.push({
-          op: "remove",
-          path: `/tracks/${trackIndex}/patterns/${targetPatternId}`,
-        });
-      }
-
-      createAndCommit("Clear Bar Pattern", ops);
+      ]);
       setSelectedTrack(trackIndex);
       if (!lockToActive) {
         setSelectedBar(bar);
@@ -1653,6 +1716,41 @@ function App() {
           op: "add",
           path: `/tracks/${trackIndex}/patterns/${nextPatternId}`,
           value: patternValue,
+        },
+        {
+          op: "replace",
+          path: `/tracks/${trackIndex}/lane/${bar}`,
+          value: nextPatternId,
+        },
+      ]);
+      setSelectedTrack(trackIndex);
+      if (!lockToActive) {
+        setSelectedBar(bar);
+      }
+    },
+    [createAndCommit, lockToActive, song.tracks]
+  );
+
+  const duplicatePatternAtBar = useCallback(
+    (trackIndex: number, bar: number) => {
+      const targetTrack = song.tracks[trackIndex];
+      if (!targetTrack) {
+        return;
+      }
+      const sourcePatternId = targetTrack.lane[bar] ?? "0";
+      if (sourcePatternId === "0") {
+        return;
+      }
+      const sourcePattern = targetTrack.patterns[sourcePatternId];
+      if (!sourcePattern) {
+        return;
+      }
+      const nextPatternId = nextPatternIdFromRecord(targetTrack.patterns);
+      createAndCommit("Duplicate Pattern For Bar", [
+        {
+          op: "add",
+          path: `/tracks/${trackIndex}/patterns/${nextPatternId}`,
+          value: deepClone(sourcePattern),
         },
         {
           op: "replace",
@@ -1735,18 +1833,7 @@ function App() {
         if (!pending || pending.pointerId !== event.pointerId) {
           return;
         }
-        suppressBarClickRef.current = true;
-        setSelectedTrack(trackIndex);
-        if (!lockToActive) {
-          setSelectedBar(bar);
-        }
-        setLoopDrag(null);
-        setTimelineBarAction({
-          trackIndex: pending.trackIndex,
-          bar: pending.bar,
-          clientX: pending.startX,
-          clientY: pending.startY,
-        });
+        openTimelineBarActionMenu(pending.trackIndex, pending.bar, pending.startX, pending.startY);
         timelineBarLongPressRef.current = null;
         timelineBarLongPressTimerRef.current = null;
       }, TIMELINE_BAR_LONG_PRESS_MS);
@@ -1778,6 +1865,18 @@ function App() {
       fixedStart: loopRange.start,
       fixedEnd: loopRange.end,
     });
+  };
+
+  const onTimelineBarContextMenu = (
+    trackIndex: number,
+    bar: number,
+    event: ReactMouseEvent<HTMLButtonElement>
+  ) => {
+    if (isMobileTimelineLayout) {
+      return;
+    }
+    event.preventDefault();
+    openTimelineBarActionMenu(trackIndex, bar, event.clientX, event.clientY);
   };
 
   const extendLoopRangeToBar = useCallback((bar: number) => {
@@ -2712,6 +2811,7 @@ function App() {
                       onDoubleClick={() => {
                         toggleSingleBarLoop(trackIndex, bar);
                       }}
+                      onContextMenu={(event) => onTimelineBarContextMenu(trackIndex, bar, event)}
                       onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
                       onPointerEnter={(event) => onTimelineBarPointerEnter(bar, event)}
                       data-bar-index={bar}
@@ -2755,7 +2855,7 @@ function App() {
                   >
                     {timelineActionPatternIds.map((id) => {
                       const previewPattern = timelineActionTrack?.patterns[id];
-                      const previewLevels = getPatternStepPreviewLevels(previewPattern);
+                      const previewRects = getPatternPreviewRects(previewPattern);
                       return (
                         <button
                           key={id}
@@ -2771,13 +2871,21 @@ function App() {
                         >
                           <span className="timeline-pattern-option-content">
                             <span className="timeline-pattern-mini-preview" aria-hidden="true">
-                              {previewLevels.map((level, step) => (
-                                <span
-                                  key={`${id}-p-${step}`}
-                                  style={{ "--step-level": `${Math.max(0.18, level)}` } as CSSProperties}
-                                  className={level > 0 ? "on" : ""}
-                                />
-                              ))}
+                              <svg
+                                viewBox={`0 0 ${PATTERN_PREVIEW_COLS} ${PATTERN_PREVIEW_HEIGHT}`}
+                                preserveAspectRatio="none"
+                              >
+                                {previewRects.map((rect, idx) => (
+                                  <rect
+                                    key={`${id}-p-${idx}`}
+                                    x={rect.x}
+                                    y={rect.y}
+                                    width={rect.width}
+                                    height={rect.height}
+                                    className={rect.kind}
+                                  />
+                                ))}
+                              </svg>
                             </span>
                             <span className="timeline-pattern-option-id">{id}</span>
                           </span>
@@ -2788,7 +2896,14 @@ function App() {
                 </div>
               </div>
               <div className="timeline-bar-action-button-row">
-                <button type="button" disabled={!timelineActionCanDupe} onClick={() => setTimelineBarAction(null)}>
+                <button
+                  type="button"
+                  disabled={!timelineActionCanDupe}
+                  onClick={() => {
+                    duplicatePatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                    setTimelineBarAction(null);
+                  }}
+                >
                   Dupe
                 </button>
                 <button
