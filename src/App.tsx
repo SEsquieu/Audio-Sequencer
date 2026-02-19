@@ -159,19 +159,6 @@ const findSynthNoteAtStep = (
   return null;
 };
 
-const getSpanSegment = (start: number, end: number, step: number): Exclude<SynthStepVisual, "off"> => {
-  if (start === end) {
-    return "single";
-  }
-  if (step === start) {
-    return "start";
-  }
-  if (step === end) {
-    return "end";
-  }
-  return "middle";
-};
-
 interface PatternPreviewRect {
   x: number;
   y: number;
@@ -436,6 +423,7 @@ function App() {
   const [oscOpen, setOscOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isSoundOpen, setIsSoundOpen] = useState(false);
+  const [isMobileAddTrackMenuOpen, setIsMobileAddTrackMenuOpen] = useState(false);
   const [octaveBase, setOctaveBase] = useState(DEFAULT_OCTAVE_BASE);
   const [octaveScrubOffsetPx, setOctaveScrubOffsetPx] = useState(0);
   const [octaveTransition, setOctaveTransition] = useState<{
@@ -448,10 +436,11 @@ function App() {
   const [candidates, setCandidates] = useState<PatchMeta[]>([]);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
   const [trackNoteSpanMemory, setTrackNoteSpanMemory] = useState<Record<string, number>>({});
-  const [mobileTimelineControlsOpen, setMobileTimelineControlsOpen] = useState(false);
   const [timelineBarAction, setTimelineBarAction] = useState<TimelineBarActionState | null>(null);
   const [tempoDraft, setTempoDraft] = useState(() => String(song.tempo));
   const [isTempoFieldFocused, setIsTempoFieldFocused] = useState(false);
+  const [activePianoPitch, setActivePianoPitch] = useState<number | null>(null);
+  const [editorSweepStep, setEditorSweepStep] = useState(0);
   const [isMobileTimelineLayout, setIsMobileTimelineLayout] = useState<boolean>(() => {
     if (typeof window === "undefined") {
       return false;
@@ -489,6 +478,10 @@ function App() {
     startY: number;
   } | null>(null);
   const timelineBarLongPressTimerRef = useRef<number | null>(null);
+  const onEngineTick = useCallback((info: { bar: number; step: number }) => {
+    setPlayhead(info);
+    setEditorSweepStep(info.step);
+  }, []);
 
   useEffect(() => {
     songRef.current = song;
@@ -503,23 +496,23 @@ function App() {
   useEffect(() => {
     if (!engineRef.current) {
       const engine = new AudioEngine();
-      engine.onTick((info) => setPlayhead(info));
+      engine.onTick(onEngineTick);
       engine.setMasterVolume(masterVolume);
       engineRef.current = engine;
     }
-  }, [masterVolume]);
+  }, [masterVolume, onEngineTick]);
 
   const getOrCreateEngine = useCallback(() => {
     let engine = engineRef.current;
     if (!engine) {
       engine = new AudioEngine();
-      engine.onTick((info) => setPlayhead(info));
+      engine.onTick(onEngineTick);
       engine.setMasterVolume(masterVolume);
       engine.setMutedTrackIds(mutedTrackIds);
       engineRef.current = engine;
     }
     return engine;
-  }, [masterVolume, mutedTrackIds]);
+  }, [masterVolume, mutedTrackIds, onEngineTick]);
 
   useEffect(() => {
     engineRef.current?.setMasterVolume(masterVolume);
@@ -678,9 +671,26 @@ function App() {
     return rows;
   }, []);
   const pitchRows = useMemo(() => buildPitchRows(octaveBase), [octaveBase, buildPitchRows]);
+  useEffect(() => {
+    if (!isPlaying || !isEditorStepTrackingActive) {
+      setEditorSweepStep(playhead.step);
+    }
+  }, [isEditorStepTrackingActive, isPlaying, playhead.step]);
+
+  const wrappedEditorSweepStep = useMemo(() => ((editorSweepStep % 16) + 16) % 16, [editorSweepStep]);
   const editorSweepStyle = useMemo(
-    () => ({ "--play-step": playhead.step } as CSSProperties),
-    [playhead.step]
+    () =>
+      ({
+        "--play-step": wrappedEditorSweepStep,
+      }) as CSSProperties,
+    [wrappedEditorSweepStep]
+  );
+  const renderEditorSweeps = () => (
+    <div
+      className="editor-sweep"
+      style={{ "--play-step": wrappedEditorSweepStep } as CSSProperties}
+      aria-hidden="true"
+    />
   );
 
   useEffect(() => {
@@ -714,12 +724,6 @@ function App() {
       media.removeEventListener("change", handleChange);
     };
   }, []);
-
-  useEffect(() => {
-    if (!isMobileTimelineLayout) {
-      setMobileTimelineControlsOpen(false);
-    }
-  }, [isMobileTimelineLayout]);
 
   useEffect(() => {
     return () => {
@@ -756,6 +760,12 @@ function App() {
     });
     syncingTimelineScrollRef.current = false;
   }, []);
+
+  useEffect(() => {
+    if (!isMobileTimelineLayout) {
+      setIsMobileAddTrackMenuOpen(false);
+    }
+  }, [isMobileTimelineLayout]);
 
   const onTimelineWheel = useCallback(
     (event: ReactWheelEvent<HTMLDivElement>) => {
@@ -1282,6 +1292,7 @@ function App() {
     pianoWalkRef.current.active = true;
     pianoWalkRef.current.pointerId = event.pointerId;
     pianoWalkRef.current.lastPitch = pitch;
+    setActivePianoPitch(pitch);
     onPreviewSynthPitch(pitch);
   };
 
@@ -1304,6 +1315,7 @@ function App() {
         return;
       }
       walk.lastPitch = pitchValue;
+      setActivePianoPitch(pitchValue);
       onPreviewSynthPitch(pitchValue);
     };
 
@@ -1315,6 +1327,7 @@ function App() {
       walk.active = false;
       walk.pointerId = null;
       walk.lastPitch = null;
+      setActivePianoPitch(null);
     };
 
     window.addEventListener("pointermove", onPointerMove, { passive: true });
@@ -2152,7 +2165,7 @@ function App() {
       >
         <button
           type="button"
-          className="row-label piano-key"
+          className={activePianoPitch === pitch ? "row-label piano-key active" : "row-label piano-key"}
           data-piano-pitch={inRange ? pitch : undefined}
           onPointerDown={(event) => onPianoKeyPointerDown(event, pitch)}
           aria-label={inRange ? `Play ${toNoteWithOctave(pitch)}` : undefined}
@@ -2194,6 +2207,21 @@ function App() {
                   aria-hidden="true"
                 />
               )}
+              {!synthDrag &&
+                !isMobileTimelineLayout &&
+                hoveredExistingNote === null &&
+                !hoverIsBlocked &&
+                hoverGhostStart !== null &&
+                hoverGhostEnd !== null && (
+                  <span
+                    className="synth-note-ghost-block"
+                    style={{
+                      left: `calc(var(--row-label-width) + (${hoverGhostStart} / 16) * (100% - var(--row-label-width)))`,
+                      width: `calc(${hoverGhostEnd - hoverGhostStart + 1} / 16 * (100% - var(--row-label-width)))`,
+                    }}
+                    aria-hidden="true"
+                  />
+                )}
               {Array.from({ length: 16 }, (_, step) => {
                 if (!inRange) {
                   return <span key={`${pitch}-${step}`} className="step-cell synth-cell hidden-cell" aria-hidden="true" />;
@@ -2233,19 +2261,6 @@ function App() {
                   !dragPreview.isRemoved &&
                   step >= dragPreview.previewStart &&
                   step <= dragPreview.previewEnd;
-                const isHoverGhostOn =
-                  !synthDrag &&
-                  !isMobileTimelineLayout &&
-                  hoveredExistingNote === null &&
-                  !hoverIsBlocked &&
-                  hoverGhostStart !== null &&
-                  hoverGhostEnd !== null &&
-                  step >= hoverGhostStart &&
-                  step <= hoverGhostEnd;
-                const hoverGhostSegment =
-                  isHoverGhostOn && hoverGhostStart !== null && hoverGhostEnd !== null
-                    ? getSpanSegment(hoverGhostStart, hoverGhostEnd, step)
-                    : null;
                 let synthVisual = getSynthStepVisual(synthPatternSteps, pitch, step);
                 if (
                   dragPreview &&
@@ -2274,8 +2289,6 @@ function App() {
                       "step-cell",
                       "synth-cell",
                       synthVisual !== "off" ? "on" : "",
-                      isHoverGhostOn && synthVisual === "off" ? "note-ghost" : "",
-                      hoverGhostSegment ? `note-ghost-${hoverGhostSegment}` : "",
                       `note-${synthVisual}`,
                     ].join(" ")}
                     data-synth-cell="1"
@@ -2316,14 +2329,15 @@ function App() {
                 <button
                   type="button"
                   className="timeline-toggle-button"
-                  onClick={() => setMobileTimelineControlsOpen((prev) => !prev)}
-                  aria-expanded={mobileTimelineControlsOpen}
+                  onClick={() => setIsMobileAddTrackMenuOpen(true)}
+                  aria-label="Add track"
+                  title="Add Track"
                 >
-                  {mobileTimelineControlsOpen ? "Hide Controls" : "Show Controls"}
+                  Add Track
                 </button>
               </div>
             )}
-            {(!isMobileTimelineLayout || mobileTimelineControlsOpen) && (
+            {!isMobileTimelineLayout && (
               <div className="timeline-controls">
                 <div className="timeline-controls-left">
                   {!isMobileTimelineLayout && (
@@ -2650,6 +2664,39 @@ function App() {
           </div>
         </>
       )}
+      {isMobileTimelineLayout && isMobileAddTrackMenuOpen && (
+        <>
+          <button
+            type="button"
+            className="timeline-bar-action-backdrop"
+            onClick={() => setIsMobileAddTrackMenuOpen(false)}
+            aria-label="Dismiss add track menu"
+          />
+          <div className="timeline-mobile-add-track-menu" role="dialog" aria-label="Add track">
+            <div className="timeline-mobile-add-track-title">Add Track</div>
+            <div className="timeline-bar-action-button-row">
+              <button
+                type="button"
+                onClick={() => {
+                  addTrack("synth");
+                  setIsMobileAddTrackMenuOpen(false);
+                }}
+              >
+                Add Synth Track
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  addTrack("drums");
+                  setIsMobileAddTrackMenuOpen(false);
+                }}
+              >
+                Add Drums Track
+              </button>
+            </div>
+          </div>
+        </>
+      )}
     </section>
   );
 
@@ -2825,7 +2872,7 @@ function App() {
                             className="step-grid octave-layer step-grid-editor synth-editor"
                             onPointerLeave={onSynthEditorPointerLeave}
                           >
-                            {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
+                            {isEditorStepTrackingActive && renderEditorSweeps()}
                             {renderPitchRows(pitchRows)}
                           </div>
                         )}
@@ -2835,14 +2882,14 @@ function App() {
                               className="step-grid octave-layer old step-grid-editor synth-editor"
                               onPointerLeave={onSynthEditorPointerLeave}
                             >
-                              {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
+                              {isEditorStepTrackingActive && renderEditorSweeps()}
                               {renderPitchRows(buildPitchRows(octaveTransition.from))}
                             </div>
                             <div
                               className="step-grid octave-layer new step-grid-editor synth-editor"
                               onPointerLeave={onSynthEditorPointerLeave}
                             >
-                              {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
+                              {isEditorStepTrackingActive && renderEditorSweeps()}
                               {renderPitchRows(buildPitchRows(octaveTransition.to))}
                             </div>
                           </>
@@ -2891,7 +2938,7 @@ function App() {
                     className="step-grid step-grid-editor drum-editor"
                     style={editorSweepStyle}
                   >
-                    {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
+                    {isEditorStepTrackingActive && renderEditorSweeps()}
                     {(["kick", "snare", "hat"] as const).map((lane) => (
                       <div key={lane} className="grid-row">
                         <button
