@@ -295,6 +295,11 @@ interface TimelineBarActionState {
   clientY: number;
 }
 
+interface TimelinePatternClipboard {
+  sourceTrackType: TrackType;
+  pattern: Pattern;
+}
+
 interface ExportedSongFile {
   format: "audio-sequencer-song";
   version: 1;
@@ -401,6 +406,7 @@ function App() {
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
   const [trackNoteSpanMemory, setTrackNoteSpanMemory] = useState<Record<string, number>>({});
   const [timelineBarAction, setTimelineBarAction] = useState<TimelineBarActionState | null>(null);
+  const [timelinePatternClipboard, setTimelinePatternClipboard] = useState<TimelinePatternClipboard | null>(null);
   const [tempoDraft, setTempoDraft] = useState(() => String(song.tempo));
   const [isTempoFieldFocused, setIsTempoFieldFocused] = useState(false);
   const [activePianoPitch, setActivePianoPitch] = useState<number | null>(null);
@@ -1531,6 +1537,7 @@ function App() {
     setLoopStripDrag(null);
     setTrackOctaves({});
     setTrackNoteSpanMemory({});
+    setTimelinePatternClipboard(null);
     setOctaveBase(DEFAULT_OCTAVE_BASE);
     setOctaveTransition(null);
   };
@@ -1733,6 +1740,69 @@ function App() {
     [createAndCommit, lockToActive, song.tracks]
   );
 
+  const copyPatternAtBar = useCallback(
+    (trackIndex: number, bar: number) => {
+      const sourceTrack = song.tracks[trackIndex];
+      if (!sourceTrack) {
+        return;
+      }
+      const sourcePatternId = sourceTrack.lane[bar] ?? "0";
+      if (sourcePatternId === "0") {
+        return;
+      }
+      const sourcePattern = sourceTrack.patterns[sourcePatternId];
+      if (!sourcePattern) {
+        return;
+      }
+      setTimelinePatternClipboard({
+        sourceTrackType: sourceTrack.type,
+        pattern: deepClone(sourcePattern),
+      });
+    },
+    [song.tracks]
+  );
+
+  const pastePatternAtBar = useCallback(
+    (trackIndex: number, bar: number) => {
+      if (!timelinePatternClipboard) {
+        return;
+      }
+      const targetTrack = song.tracks[trackIndex];
+      if (!targetTrack) {
+        return;
+      }
+      const targetPatternId = targetTrack.lane[bar] ?? "0";
+      if (targetPatternId === "0") {
+        return;
+      }
+      const targetPattern = targetTrack.patterns[targetPatternId];
+      if (!targetPattern) {
+        return;
+      }
+      if (targetTrack.type !== timelinePatternClipboard.sourceTrackType) {
+        return;
+      }
+      if (targetTrack.type !== timelinePatternClipboard.pattern.type) {
+        return;
+      }
+      if (targetPattern.type !== timelinePatternClipboard.pattern.type) {
+        return;
+      }
+      createAndCommit("Paste Pattern To Active Pattern", [
+        {
+          op: "replace",
+          path: `/tracks/${trackIndex}/patterns/${targetPatternId}`,
+          value: deepClone(timelinePatternClipboard.pattern),
+        },
+      ]);
+      setSelectedTrack(trackIndex);
+      if (!lockToActive) {
+        setSelectedBar(bar);
+      }
+    },
+    [createAndCommit, lockToActive, song.tracks, timelinePatternClipboard]
+  );
+
   const timelineActionTrack = timelineBarAction ? song.tracks[timelineBarAction.trackIndex] : null;
   const timelineActionPatternId =
     timelineBarAction && timelineActionTrack ? (timelineActionTrack.lane[timelineBarAction.bar] ?? "0") : "0";
@@ -1744,6 +1814,13 @@ function App() {
   }, [timelineActionTrack]);
   const timelineActionCanDupe =
     timelineActionPatternId !== "0" && Boolean(timelineActionTrack?.patterns[timelineActionPatternId]);
+  const timelineActionCanCopy = timelineActionCanDupe;
+  const timelineActionCanPaste =
+    Boolean(timelinePatternClipboard) &&
+    Boolean(timelineActionTrack) &&
+    timelineActionPatternId !== "0" &&
+    timelinePatternClipboard?.sourceTrackType === timelineActionTrack?.type &&
+    timelinePatternClipboard?.pattern.type === timelineActionTrack?.type;
 
   const onImportSongFile = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1774,6 +1851,7 @@ function App() {
         setLoopStripDrag(null);
         setTrackOctaves({});
         setTrackNoteSpanMemory({});
+        setTimelinePatternClipboard(null);
         setOctaveBase(DEFAULT_OCTAVE_BASE);
         setOctaveTransition(null);
         setCandidates([]);
@@ -2587,6 +2665,26 @@ function App() {
               </div>
             </div>
             <div className="timeline-bar-action-button-row">
+              <button
+                type="button"
+                disabled={!timelineActionCanCopy}
+                onClick={() => {
+                  copyPatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
+                Copy
+              </button>
+              <button
+                type="button"
+                disabled={!timelineActionCanPaste}
+                onClick={() => {
+                  pastePatternAtBar(timelineBarAction.trackIndex, timelineBarAction.bar);
+                  setTimelineBarAction(null);
+                }}
+              >
+                Paste
+              </button>
               <button
                 type="button"
                 disabled={!timelineActionCanDupe}
