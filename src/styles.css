@@ -1157,6 +1157,7 @@ select {
 
 .grid-row.synth-row {
   gap: 0;
+  position: relative;
 }
 
 .grid-row.synth-row .step-cell {
@@ -1277,6 +1278,43 @@ select {
   box-shadow:
     inset 1px 0 0 rgba(0, 0, 0, 0.55),
     inset -1px 0 0 rgba(0, 0, 0, 0.55);
+}
+
+.synth-cell.note-ghost::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-top: 1px solid rgba(34, 197, 94, 0.42);
+  border-bottom: 1px solid rgba(34, 197, 94, 0.42);
+  background: rgba(34, 197, 94, 0.36);
+  box-shadow:
+    inset 0 0 0 1px rgba(34, 197, 94, 0.22),
+    0 0 0.55rem rgba(34, 197, 94, 0.38);
+  pointer-events: none;
+}
+
+.synth-cell.note-ghost-single::after {
+  border-left: 1px solid rgba(34, 197, 94, 0.42);
+  border-right: 1px solid rgba(34, 197, 94, 0.42);
+}
+
+.synth-cell.note-ghost-start::after {
+  border-left: 1px solid rgba(34, 197, 94, 0.42);
+}
+
+.synth-cell.note-ghost-end::after {
+  border-right: 1px solid rgba(34, 197, 94, 0.42);
+}
+
+.synth-note-hover-outline {
+  position: absolute;
+  top: 0.06rem;
+  bottom: 0.06rem;
+  pointer-events: none;
+  z-index: 2;
+  border: 2px solid rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 0.45rem rgba(255, 255, 255, 0.24);
 }
 
 .grid-row.key-white .step-cell {

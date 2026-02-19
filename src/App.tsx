@@ -159,6 +159,19 @@ const findSynthNoteAtStep = (
   return null;
 };
 
+const getSpanSegment = (start: number, end: number, step: number): Exclude<SynthStepVisual, "off"> => {
+  if (start === end) {
+    return "single";
+  }
+  if (step === start) {
+    return "start";
+  }
+  if (step === end) {
+    return "end";
+  }
+  return "middle";
+};
+
 interface PatternPreviewRect {
   x: number;
   y: number;
@@ -283,6 +296,11 @@ interface SynthDragState {
   cellWidth: number;
   originNoteStart: number | null;
   originNoteLength: number | null;
+}
+
+interface SynthHoverState {
+  step: number;
+  pitch: number;
 }
 
 interface LoopRange {
@@ -411,6 +429,7 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [masterVolume, setMasterVolume] = useState(0.8);
   const [synthDrag, setSynthDrag] = useState<SynthDragState | null>(null);
+  const [synthHover, setSynthHover] = useState<SynthHoverState | null>(null);
   const [adsrOpen, setAdsrOpen] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
   const [modOpen, setModOpen] = useState(false);
@@ -584,6 +603,8 @@ function App() {
     Boolean(patternId) && patternId !== "0" && patternId === playheadPatternId;
   const synthPatternSteps =
     track?.type === "synth" && pattern?.type === "synth" ? pattern.steps : createEmptySynthSteps();
+  const rememberedSynthLength =
+    track?.type === "synth" ? Math.max(1, Math.floor(trackNoteSpanMemory[track.id] ?? 1)) : 1;
   const drumPatternSteps =
     track?.type === "drums" && pattern?.type === "drums" ? pattern.steps : createEmptyDrumSteps();
 
@@ -1045,6 +1066,7 @@ function App() {
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
     activeSynthPointerIdRef.current = event.pointerId;
+    setSynthHover(null);
     const cellRect = event.currentTarget.getBoundingClientRect();
     const origin = findSynthNoteAtStep(synthPatternSteps, pitch, stepIndex);
     setSynthDrag({
@@ -1088,6 +1110,21 @@ function App() {
   };
 
   const onSynthPointerEnter = (stepIndex: number, pitch: number, event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (
+      !synthDrag &&
+      !isMobileTimelineLayout &&
+      event.pointerType === "mouse" &&
+      (event.buttons & 1) !== 1 &&
+      isPitchInEditableRange(pitch)
+    ) {
+      setSynthHover((prev) => {
+        if (prev?.step === stepIndex && prev.pitch === pitch) {
+          return prev;
+        }
+        return { step: stepIndex, pitch };
+      });
+      return;
+    }
     if ((event.buttons & 1) !== 1 || !isPitchInEditableRange(pitch)) {
       return;
     }
@@ -1103,6 +1140,13 @@ function App() {
     });
   };
 
+  const onSynthEditorPointerLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse") {
+      return;
+    }
+    setSynthHover(null);
+  };
+
   const finalizeSynthDrag = useCallback(() => {
     if (!synthDrag) {
       return;
@@ -1112,9 +1156,16 @@ function App() {
     setSynthDrag(null);
 
     if (originNoteStart !== null) {
-      if (moved && endStep < startStep) {
+      if (moved) {
         const originalEnd = Math.min(15, originNoteStart + Math.max(1, originNoteLength ?? 1) - 1);
-        const nextEnd = Math.max(originNoteStart, Math.min(originalEnd, endStep));
+        if (endStep < originNoteStart) {
+          onRemoveSynthNote(startStep, pitch);
+          return;
+        }
+        const nextEnd =
+          endStep < startStep
+            ? Math.max(originNoteStart, Math.min(originalEnd, endStep))
+            : Math.max(originalEnd, Math.min(15, endStep));
         onSetSynthNoteLength(originNoteStart, nextEnd, pitch);
         return;
       }
@@ -1129,6 +1180,13 @@ function App() {
 
     onSetSynthNoteLength(startStep, endStep, pitch);
   }, [onRemoveSynthNote, onSetSynthNoteLength, onToggleSynthCell, synthDrag]);
+
+  useEffect(() => {
+    if (!isMobileTimelineLayout) {
+      return;
+    }
+    setSynthHover(null);
+  }, [isMobileTimelineLayout]);
 
   useEffect(() => {
     if (!synthDrag) {
@@ -2102,47 +2160,136 @@ function App() {
         >
           {inRange ? toNoteName(pitch) : ""}
         </button>
-        {Array.from({ length: 16 }, (_, step) => {
-          if (!inRange) {
-            return <span key={`${pitch}-${step}`} className="step-cell synth-cell hidden-cell" aria-hidden="true" />;
-          }
-          const dragPreviewActive = Boolean(synthDrag?.moved);
-          const previewEnd = dragPreviewActive && synthDrag ? Math.max(synthDrag.startStep, synthDrag.endStep) : -1;
-          const isDragPreviewOn =
-            dragPreviewActive &&
-            synthDrag?.pitch === pitch &&
-            step >= synthDrag.startStep &&
-            step <= previewEnd;
-          let synthVisual = getSynthStepVisual(synthPatternSteps, pitch, step);
-          if (isDragPreviewOn && synthDrag) {
-            if (synthDrag.startStep === previewEnd) {
-              synthVisual = "single";
-            } else if (step === synthDrag.startStep) {
-              synthVisual = "start";
-            } else if (step === previewEnd) {
-              synthVisual = "end";
-            } else {
-              synthVisual = "middle";
-            }
-          }
+        {(() => {
+          const hoverGhostStart =
+            !synthDrag && !isMobileTimelineLayout && synthHover?.pitch === pitch ? synthHover.step : null;
+          const hoveredExistingNote =
+            hoverGhostStart === null ? null : findSynthNoteAtStep(synthPatternSteps, pitch, hoverGhostStart);
+          const hoveredExistingStart = hoveredExistingNote?.start ?? null;
+          const hoveredExistingEnd =
+            hoveredExistingNote === null ? null : Math.min(15, hoveredExistingNote.start + hoveredExistingNote.length - 1);
+          const hoverGhostLength =
+            hoverGhostStart === null ? 1 : Math.max(1, Math.min(16 - hoverGhostStart, rememberedSynthLength));
+          const hoverGhostEnd = hoverGhostStart === null ? null : hoverGhostStart + hoverGhostLength - 1;
+          const hoverStartNotes = hoverGhostStart === null ? [] : normalizeSynthCell(synthPatternSteps[hoverGhostStart]);
+          const hoverHasPitchAtStart = hoverStartNotes.some((note) => note.pitch === pitch);
+          const hoverIsBlocked =
+            hoverGhostStart !== null &&
+            !hoverHasPitchAtStart &&
+            (hoverStartNotes.length >= 4 || findPreviousOverlappingStart(synthPatternSteps, pitch, hoverGhostStart) !== null);
+          const showExistingHoverOutline =
+            !synthDrag &&
+            !isMobileTimelineLayout &&
+            hoveredExistingStart !== null &&
+            hoveredExistingEnd !== null;
           return (
-            <button
-              key={`${pitch}-${step}`}
-              className={[
-                "step-cell",
-                "synth-cell",
-                synthVisual !== "off" ? "on" : "",
-                `note-${synthVisual}`,
-              ].join(" ")}
-              data-synth-cell="1"
-              data-step={step}
-              data-pitch={pitch}
-              onPointerDown={(event) => onSynthPointerDown(step, pitch, event)}
-              onPointerMove={onSynthPointerMove}
-              onPointerEnter={(event) => onSynthPointerEnter(step, pitch, event)}
-            />
+            <>
+              {showExistingHoverOutline && (
+                <span
+                  className="synth-note-hover-outline"
+                  style={{
+                    left: `calc(var(--row-label-width) + (${hoveredExistingStart} / 16) * (100% - var(--row-label-width)))`,
+                    width: `calc(${hoveredExistingEnd - hoveredExistingStart + 1} / 16 * (100% - var(--row-label-width)))`,
+                  }}
+                  aria-hidden="true"
+                />
+              )}
+              {Array.from({ length: 16 }, (_, step) => {
+                if (!inRange) {
+                  return <span key={`${pitch}-${step}`} className="step-cell synth-cell hidden-cell" aria-hidden="true" />;
+                }
+                const dragPreviewActive = Boolean(synthDrag?.moved);
+                const isDragPitch = dragPreviewActive && synthDrag?.pitch === pitch;
+                const dragPreview = (() => {
+                  if (!isDragPitch || !synthDrag) {
+                    return null;
+                  }
+                  if (synthDrag.originNoteStart !== null) {
+                    const originStart = synthDrag.originNoteStart;
+                    const originEnd = Math.min(15, originStart + Math.max(1, synthDrag.originNoteLength ?? 1) - 1);
+                    const previewEnd =
+                      synthDrag.endStep < synthDrag.startStep
+                        ? Math.max(originStart, Math.min(originEnd, synthDrag.endStep))
+                        : Math.max(originEnd, Math.min(15, synthDrag.endStep));
+                    const isRemoved = synthDrag.endStep < originStart;
+                    return {
+                      clearStart: originStart,
+                      clearEnd: originEnd,
+                      previewStart: originStart,
+                      previewEnd,
+                      isRemoved,
+                    };
+                  }
+                  return {
+                    clearStart: null,
+                    clearEnd: null,
+                    previewStart: synthDrag.startStep,
+                    previewEnd: Math.max(synthDrag.startStep, synthDrag.endStep),
+                    isRemoved: false,
+                  };
+                })();
+                const isDragPreviewOn =
+                  dragPreview !== null &&
+                  !dragPreview.isRemoved &&
+                  step >= dragPreview.previewStart &&
+                  step <= dragPreview.previewEnd;
+                const isHoverGhostOn =
+                  !synthDrag &&
+                  !isMobileTimelineLayout &&
+                  hoveredExistingNote === null &&
+                  !hoverIsBlocked &&
+                  hoverGhostStart !== null &&
+                  hoverGhostEnd !== null &&
+                  step >= hoverGhostStart &&
+                  step <= hoverGhostEnd;
+                const hoverGhostSegment =
+                  isHoverGhostOn && hoverGhostStart !== null && hoverGhostEnd !== null
+                    ? getSpanSegment(hoverGhostStart, hoverGhostEnd, step)
+                    : null;
+                let synthVisual = getSynthStepVisual(synthPatternSteps, pitch, step);
+                if (
+                  dragPreview &&
+                  dragPreview.clearStart !== null &&
+                  dragPreview.clearEnd !== null &&
+                  step >= dragPreview.clearStart &&
+                  step <= dragPreview.clearEnd
+                ) {
+                  synthVisual = "off";
+                }
+                if (isDragPreviewOn && dragPreview) {
+                  if (dragPreview.previewStart === dragPreview.previewEnd) {
+                    synthVisual = "single";
+                  } else if (step === dragPreview.previewStart) {
+                    synthVisual = "start";
+                  } else if (step === dragPreview.previewEnd) {
+                    synthVisual = "end";
+                  } else {
+                    synthVisual = "middle";
+                  }
+                }
+                return (
+                  <button
+                    key={`${pitch}-${step}`}
+                    className={[
+                      "step-cell",
+                      "synth-cell",
+                      synthVisual !== "off" ? "on" : "",
+                      isHoverGhostOn && synthVisual === "off" ? "note-ghost" : "",
+                      hoverGhostSegment ? `note-ghost-${hoverGhostSegment}` : "",
+                      `note-${synthVisual}`,
+                    ].join(" ")}
+                    data-synth-cell="1"
+                    data-step={step}
+                    data-pitch={pitch}
+                    onPointerDown={(event) => onSynthPointerDown(step, pitch, event)}
+                    onPointerMove={onSynthPointerMove}
+                    onPointerEnter={(event) => onSynthPointerEnter(step, pitch, event)}
+                  />
+                );
+              })}
+            </>
           );
-        })}
+        })()}
       </div>
     ));
 
@@ -2674,18 +2821,27 @@ function App() {
                         } as CSSProperties}
                       >
                         {!octaveTransition && (
-                          <div className="step-grid octave-layer step-grid-editor synth-editor">
+                          <div
+                            className="step-grid octave-layer step-grid-editor synth-editor"
+                            onPointerLeave={onSynthEditorPointerLeave}
+                          >
                             {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
                             {renderPitchRows(pitchRows)}
                           </div>
                         )}
                         {octaveTransition && (
                           <>
-                            <div className="step-grid octave-layer old step-grid-editor synth-editor">
+                            <div
+                              className="step-grid octave-layer old step-grid-editor synth-editor"
+                              onPointerLeave={onSynthEditorPointerLeave}
+                            >
                               {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
                               {renderPitchRows(buildPitchRows(octaveTransition.from))}
                             </div>
-                            <div className="step-grid octave-layer new step-grid-editor synth-editor">
+                            <div
+                              className="step-grid octave-layer new step-grid-editor synth-editor"
+                              onPointerLeave={onSynthEditorPointerLeave}
+                            >
                               {isEditorStepTrackingActive && <div className="editor-sweep" aria-hidden="true" />}
                               {renderPitchRows(buildPitchRows(octaveTransition.to))}
                             </div>
