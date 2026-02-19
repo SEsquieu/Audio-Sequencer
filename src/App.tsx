@@ -16,6 +16,7 @@ import { AudioEngine, getEffectiveLoopBars } from "./audio/engine";
 import { AdsrEnvelopeEditor } from "./components/AdsrEnvelopeEditor";
 import { FilterEqPad } from "./components/FilterEqPad";
 import { SynthModPads } from "./components/SynthModPads";
+import { buildDefaultInstrument } from "./state/instrumentDefaults";
 import { getMatchingPresetId, getPresetsForType } from "./state/instrumentPresets";
 import { useSong } from "./state/songContext";
 import { JsonPatchOp, PatchMeta, Pattern, SongState, SynthStep, Track, TrackType, WaveformType } from "./types/song";
@@ -236,43 +237,6 @@ const getDefaultOctaveForTrack = (track?: Track): number => {
   }
   return DEFAULT_OCTAVE_BASE;
 };
-
-const buildDefaultInstrument = (type: TrackType): Track["instrument"] =>
-  type === "synth"
-    ? {
-        attack: 0.01,
-        decay: 0.18,
-        sustain: 0.5,
-        release: 0.22,
-        cutoff: 2200,
-        resonance: 1,
-        gain: 0.45,
-        lofiAmount: 0,
-        detune: 6,
-        drive: 0.12,
-        vibratoRate: 5.5,
-        vibratoDepth: 8,
-        oscWaveformA: "sawtooth",
-        oscWaveformB: "square",
-        oscMix: 0.5,
-      }
-    : {
-        attack: 0.001,
-        decay: 0.12,
-        sustain: 0,
-        release: 0.06,
-        cutoff: 8000,
-        resonance: 0.2,
-        gain: 0.7,
-        lofiAmount: 0,
-        detune: 0,
-        drive: 0.08,
-        vibratoRate: 0,
-        vibratoDepth: 0,
-        oscWaveformA: "triangle",
-        oscWaveformB: "triangle",
-        oscMix: 0.5,
-      };
 
 interface SynthDragState {
   startStep: number;
@@ -1466,7 +1430,7 @@ function App() {
     const trackIndex = song.tracks.length;
     const name = type === "synth" ? `Synth ${typeCount + 1}` : `Drums ${typeCount + 1}`;
     const id = `t-${type}-${Date.now().toString(36)}-${Math.random().toString(16).slice(2, 6)}`;
-    const lane = Array.from({ length: song.bars }, () => "0");
+    const lane = Array.from({ length: song.bars }, (_, barIndex) => (barIndex < 4 ? "1" : "0"));
 
     const newTrack: Track =
       type === "synth"
@@ -2960,9 +2924,7 @@ function App() {
                                 velocity > 0 ? "on" : "",
                               ].join(" ")}
                               onClick={() => onToggleDrumCell(step, lane)}
-                            >
-                              {velocity > 0 ? "*" : ""}
-                            </button>
+                            />
                           );
                         })}
                       </div>
@@ -3048,6 +3010,42 @@ function App() {
                         />
                         <span>{track.instrument.oscMix.toFixed(2)}</span>
                       </label>
+                      <label>
+                        <span>Sub Mix</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={track.instrument.subOscMix}
+                          onChange={(e) => onParamChange("subOscMix", Number(e.target.value))}
+                        />
+                        <span>{track.instrument.subOscMix.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Noise</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={track.instrument.noiseMix}
+                          onChange={(e) => onParamChange("noiseMix", Number(e.target.value))}
+                        />
+                        <span>{track.instrument.noiseMix.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Width</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={track.instrument.stereoWidth}
+                          onChange={(e) => onParamChange("stereoWidth", Number(e.target.value))}
+                        />
+                        <span>{track.instrument.stereoWidth.toFixed(2)}</span>
+                      </label>
                     </div>
                   )}
                 </div>
@@ -3081,11 +3079,29 @@ function App() {
                   Filter EQ
                 </button>
                 {filterOpen && (
-                  <FilterEqPad
-                    cutoff={track.instrument.cutoff}
-                    resonance={track.instrument.resonance}
-                    onChange={onParamChange}
-                  />
+                  <>
+                    <FilterEqPad
+                      cutoff={track.instrument.cutoff}
+                      resonance={track.instrument.resonance}
+                      onChange={onParamChange}
+                    />
+                    {track.type === "synth" && (
+                      <div className="osc-controls">
+                        <label>
+                          <span>Env Amt</span>
+                          <input
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.01}
+                            value={track.instrument.filterEnvAmount}
+                            onChange={(e) => onParamChange("filterEnvAmount", Number(e.target.value))}
+                          />
+                          <span>{track.instrument.filterEnvAmount.toFixed(2)}</span>
+                        </label>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
               {track.type === "synth" && (
@@ -3150,13 +3166,25 @@ function App() {
 
       <section className={["ai-sheet", isAiOpen ? "open" : ""].join(" ")} aria-label="Smart Patch Panel">
         <div className="ai-sheet-header">
-          <h2>Smart Patch Proposals</h2>
+          <div>
+            <h2>Smart Patch</h2>
+            <p className="ai-sheet-subtitle">Generate, audition, and apply arrangement changes quickly.</p>
+          </div>
           <button type="button" onClick={() => setIsAiOpen(false)}>
             Close
           </button>
         </div>
 
-        <div className="preset-row">
+        <div className="ai-sheet-meta">
+          <span>
+            Track: <strong>{track?.name ?? "None"}</strong>
+          </span>
+          <span>
+            {candidates.length} proposal{candidates.length === 1 ? "" : "s"}
+          </span>
+        </div>
+
+        <div className="ai-quick-prompts">
           {[
             ["Punchier", "make drums punchy"],
             ["Lo-fi", "make it lofi"],
@@ -3164,7 +3192,9 @@ function App() {
             ["Add variation", "add variation"],
           ].map(([label, p]) => (
             <button
+              type="button"
               key={label}
+              className="ai-quick-chip"
               onClick={() => {
                 setPrompt(p);
                 generateCandidates(p);
@@ -3176,29 +3206,49 @@ function App() {
         </div>
 
         <form onSubmit={onSubmitPrompt} className="ai-form">
-          <input
+          <label className="ai-form-label" htmlFor="ai-prompt-input">
+            Prompt
+          </label>
+          <textarea
+            id="ai-prompt-input"
+            className="ai-prompt-input"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             placeholder="Describe the patch change you want..."
+            rows={2}
           />
-          <button type="submit">Propose</button>
+          <div className="ai-form-actions">
+            <button type="submit">Generate</button>
+            <button type="button" onClick={() => setPrompt("")}>
+              Clear
+            </button>
+          </div>
         </form>
 
         <div className="candidate-list">
-          {candidates.map((candidate) => (
+          {candidates.length === 0 && (
+            <div className="ai-empty-state">No proposals yet. Use a quick prompt or write your own.</div>
+          )}
+          {candidates.map((candidate, idx) => (
             <article key={candidate.id} className="candidate-card">
-              <h3>{candidate.label}</h3>
+              <div className="candidate-head">
+                <h3>{candidate.label}</h3>
+                <span className="candidate-tag">Option {idx + 1}</span>
+              </div>
               <p>{candidate.explanation}</p>
               <div className="candidate-actions">
-                <button onClick={() => auditionToggle(candidate)}>
-                  {auditionPatchId === candidate.id ? "Stop Audition" : "Audition"}
+                <button type="button" onClick={() => auditionToggle(candidate)}>
+                  {auditionPatchId === candidate.id ? "Stop" : "Audition"}
                 </button>
-                <button onClick={() => acceptCandidate(candidate)}>Accept</button>
-                <button onClick={() => rejectCandidate(candidate.id)}>Reject</button>
+                <button type="button" className="candidate-accept" onClick={() => acceptCandidate(candidate)}>
+                  Accept
+                </button>
+                <button type="button" className="candidate-reject" onClick={() => rejectCandidate(candidate.id)}>
+                  Reject
+                </button>
               </div>
             </article>
           ))}
-          {candidates.length === 0 && <p>No patch candidates yet. Use presets or type a prompt.</p>}
         </div>
       </section>
     </div>

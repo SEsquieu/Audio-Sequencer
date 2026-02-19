@@ -10,6 +10,7 @@ import {
 import { HistoryEntry, JsonPatchOp, PatchMeta, SongState } from "../types/song";
 import { createDefaultSong } from "./defaultSong";
 import { applyPatch, invertPatch } from "./patch";
+import { normalizeSongState } from "./songNormalization";
 
 interface PersistedState {
   song: SongState;
@@ -83,7 +84,7 @@ const loadInitial = (): PersistedState => {
         const parsed = JSON.parse(raw) as Partial<PersistedSongSnapshot>;
         if (parsed.version === 1 && isSongStateLike(parsed.song)) {
           return {
-            song: parsed.song,
+            song: normalizeSongState(parsed.song),
             past: [],
             future: [],
           };
@@ -198,7 +199,7 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
   const importSong = useCallback(
     (nextSong: SongState) => {
       setState({
-        song: nextSong,
+        song: normalizeSongState(nextSong),
         past: [],
         future: [],
       });

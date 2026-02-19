@@ -23,6 +23,10 @@ const numericInstrumentFields: NumericInstrumentField[] = [
   "vibratoRate",
   "vibratoDepth",
   "oscMix",
+  "subOscMix",
+  "noiseMix",
+  "stereoWidth",
+  "filterEnvAmount",
 ];
 
 const nearlyEqual = (a: number, b: number) => Math.abs(a - b) < 0.000001;
@@ -48,6 +52,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "sawtooth",
       oscWaveformB: "square",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -70,6 +78,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "sine",
       oscMix: 0.55,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -92,6 +104,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "square",
       oscWaveformB: "triangle",
       oscMix: 0.48,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -114,6 +130,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "square",
       oscWaveformB: "sawtooth",
       oscMix: 0.3,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -136,6 +156,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "sine",
       oscWaveformB: "triangle",
       oscMix: 0.2,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -158,6 +182,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "sawtooth",
       oscWaveformB: "sawtooth",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -180,6 +208,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "square",
       oscMix: 0.55,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -202,6 +234,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "sine",
       oscWaveformB: "triangle",
       oscMix: 0.65,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -224,6 +260,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "sawtooth",
       oscWaveformB: "square",
       oscMix: 0.45,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -246,6 +286,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "triangle",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -268,6 +312,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "triangle",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -290,6 +338,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "triangle",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -312,6 +364,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "triangle",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -334,6 +390,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "triangle",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
   {
@@ -356,6 +416,10 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       oscWaveformA: "triangle",
       oscWaveformB: "triangle",
       oscMix: 0.5,
+      subOscMix: 0,
+      noiseMix: 0,
+      stereoWidth: 0.25,
+      filterEnvAmount: 0,
     },
   },
 ];
@@ -371,3 +435,5 @@ export const getMatchingPresetId = (type: TrackType, params: InstrumentParams): 
   );
   return match?.id ?? null;
 };
+
+

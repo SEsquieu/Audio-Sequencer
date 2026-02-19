@@ -17,6 +17,10 @@ export interface InstrumentParams {
   oscWaveformA: WaveformType;
   oscWaveformB: WaveformType;
   oscMix: number;
+  subOscMix: number;
+  noiseMix: number;
+  stereoWidth: number;
+  filterEnvAmount: number;
 }
 
 export interface SynthStep {

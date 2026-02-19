@@ -18,6 +18,12 @@ interface SynthVoice {
   mix: GainNode;
   aGain: GainNode;
   bGain: GainNode;
+  subGain: GainNode;
+  noiseGain: GainNode;
+  aPan: StereoPannerNode;
+  bPan: StereoPannerNode;
+  subPan: StereoPannerNode;
+  noiseFilter: BiquadFilterNode;
 }
 
 export interface VoiceDiagnostics {
@@ -116,18 +122,34 @@ class SynthVoicePool {
     const mix = context.createGain();
     const aGain = context.createGain();
     const bGain = context.createGain();
+    const subGain = context.createGain();
+    const noiseGain = context.createGain();
+    const aPan = context.createStereoPanner();
+    const bPan = context.createStereoPanner();
+    const subPan = context.createStereoPanner();
+    const noiseFilter = context.createBiquadFilter();
     const shaper = context.createWaveShaper();
     const filter = context.createBiquadFilter();
     const amp = context.createGain();
 
     aGain.gain.setValueAtTime(MIN_GAIN, context.currentTime);
     bGain.gain.setValueAtTime(MIN_GAIN, context.currentTime);
+    subGain.gain.setValueAtTime(MIN_GAIN, context.currentTime);
+    noiseGain.gain.setValueAtTime(MIN_GAIN, context.currentTime);
     amp.gain.setValueAtTime(MIN_GAIN, context.currentTime);
     shaper.oversample = "2x";
     filter.type = "lowpass";
+    noiseFilter.type = "highpass";
+    noiseFilter.frequency.setValueAtTime(2500, context.currentTime);
 
+    aPan.connect(aGain);
+    bPan.connect(bGain);
+    subPan.connect(subGain);
+    noiseFilter.connect(noiseGain);
     aGain.connect(mix);
     bGain.connect(mix);
+    subGain.connect(mix);
+    noiseGain.connect(mix);
     mix.connect(shaper);
     shaper.connect(filter);
     filter.connect(amp);
@@ -144,6 +166,12 @@ class SynthVoicePool {
       mix,
       aGain,
       bGain,
+      subGain,
+      noiseGain,
+      aPan,
+      bPan,
+      subPan,
+      noiseFilter,
     };
   }
 }
@@ -209,6 +237,10 @@ export class InstrumentEngine {
       oscWaveformA,
       oscWaveformB,
       oscMix,
+      subOscMix,
+      noiseMix,
+      stereoWidth,
+      filterEnvAmount,
     } = track.instrument;
 
     const stepDuration = 60 / tempo / 4;
@@ -217,26 +249,57 @@ export class InstrumentEngine {
     const safeRelease = Math.max(0.01, release);
     const detuneCents = Math.max(0, detune);
     const mixAmount = Math.max(0, Math.min(1, oscMix));
+    const safeSubMix = Math.max(0, Math.min(1, subOscMix));
+    const safeNoiseMix = Math.max(0, Math.min(1, noiseMix));
+    const safeWidth = Math.max(0, Math.min(1, stereoWidth));
+    const mainLayer = Math.max(MIN_GAIN, 1 - safeSubMix - safeNoiseMix);
+    const layerNorm = mainLayer + safeSubMix + safeNoiseMix;
+    const oscLayer = mainLayer / layerNorm;
+    const subLayer = safeSubMix / layerNorm;
+    const noiseLayer = safeNoiseMix / layerNorm;
+    const oscAAmount = Math.max(MIN_GAIN, (1 - mixAmount) * oscLayer);
+    const oscBAmount = Math.max(MIN_GAIN, mixAmount * oscLayer);
+    const subAmount = Math.max(MIN_GAIN, subLayer);
+    const noiseAmount = Math.max(MIN_GAIN, noiseLayer);
     const oscFadeIn = 0.0015;
     const oscFadeOut = 0.003;
     const peak = Math.max(MIN_GAIN, gain * velocity);
     const stopAt = when + noteDuration + safeRelease + 0.02;
     const fadeOutAt = Math.max(when + oscFadeIn, stopAt - oscFadeOut);
 
-    smoothParam(voice.filter.frequency, Math.max(120, cutoff * (1 - lofiAmount * 0.3)), when);
+    const baseCutoff = Math.max(120, cutoff * (1 - lofiAmount * 0.3));
+    const envAmount = Math.max(0, Math.min(1, filterEnvAmount));
+    const envCutoff = Math.min(12000, baseCutoff * (1 + envAmount * 2.2));
+    voice.filter.frequency.cancelScheduledValues(when);
+    voice.filter.frequency.setValueAtTime(envCutoff, when);
+    voice.filter.frequency.exponentialRampToValueAtTime(Math.max(120, baseCutoff), when + safeAttack + Math.max(0.02, decay));
     smoothParam(voice.filter.Q, Math.max(0.001, resonance), when);
     voice.shaper.curve = createDriveCurve(Math.max(0, Math.min(1, drive))) as unknown as Float32Array<ArrayBuffer>;
+    smoothParam(voice.noiseFilter.frequency, Math.max(1000, Math.min(10000, baseCutoff * 1.7)), when);
+    smoothParam(voice.aPan.pan, -safeWidth * 0.65, when);
+    smoothParam(voice.bPan.pan, safeWidth * 0.65, when);
+    smoothParam(voice.subPan.pan, -safeWidth * 0.2, when);
 
     voice.aGain.gain.cancelScheduledValues(when);
     voice.bGain.gain.cancelScheduledValues(when);
+    voice.subGain.gain.cancelScheduledValues(when);
+    voice.noiseGain.gain.cancelScheduledValues(when);
     voice.aGain.gain.setValueAtTime(MIN_GAIN, when);
     voice.bGain.gain.setValueAtTime(MIN_GAIN, when);
-    voice.aGain.gain.linearRampToValueAtTime(Math.max(MIN_GAIN, 1 - mixAmount), when + oscFadeIn);
-    voice.bGain.gain.linearRampToValueAtTime(Math.max(MIN_GAIN, mixAmount), when + oscFadeIn);
-    voice.aGain.gain.setValueAtTime(Math.max(MIN_GAIN, 1 - mixAmount), fadeOutAt);
-    voice.bGain.gain.setValueAtTime(Math.max(MIN_GAIN, mixAmount), fadeOutAt);
+    voice.subGain.gain.setValueAtTime(MIN_GAIN, when);
+    voice.noiseGain.gain.setValueAtTime(MIN_GAIN, when);
+    voice.aGain.gain.linearRampToValueAtTime(oscAAmount, when + oscFadeIn);
+    voice.bGain.gain.linearRampToValueAtTime(oscBAmount, when + oscFadeIn);
+    voice.subGain.gain.linearRampToValueAtTime(subAmount, when + oscFadeIn);
+    voice.noiseGain.gain.linearRampToValueAtTime(noiseAmount, when + oscFadeIn);
+    voice.aGain.gain.setValueAtTime(oscAAmount, fadeOutAt);
+    voice.bGain.gain.setValueAtTime(oscBAmount, fadeOutAt);
+    voice.subGain.gain.setValueAtTime(subAmount, fadeOutAt);
+    voice.noiseGain.gain.setValueAtTime(noiseAmount, fadeOutAt);
     voice.aGain.gain.linearRampToValueAtTime(MIN_GAIN, stopAt);
     voice.bGain.gain.linearRampToValueAtTime(MIN_GAIN, stopAt);
+    voice.subGain.gain.linearRampToValueAtTime(MIN_GAIN, stopAt);
+    voice.noiseGain.gain.linearRampToValueAtTime(MIN_GAIN, stopAt);
 
     voice.amp.gain.cancelScheduledValues(when);
     voice.amp.gain.setValueAtTime(MIN_GAIN, when);
@@ -247,15 +310,26 @@ export class InstrumentEngine {
 
     const oscA = context.createOscillator();
     const oscB = context.createOscillator();
+    const oscSub = context.createOscillator();
+    const noise = context.createBufferSource();
+    const noiseBuffer = this.getNoiseBuffer();
     oscA.type = oscWaveformA;
     oscB.type = oscWaveformB;
+    oscSub.type = oscWaveformA === "sine" ? "sine" : "triangle";
     const baseFreq = midiToFreq(pitch);
     oscA.frequency.setValueAtTime(baseFreq, when);
     oscB.frequency.setValueAtTime(baseFreq, when);
+    oscSub.frequency.setValueAtTime(Math.max(20, baseFreq * 0.5), when);
     oscA.detune.setValueAtTime(-detuneCents * 0.5, when);
     oscB.detune.setValueAtTime(detuneCents * 0.5, when);
-    oscA.connect(voice.aGain);
-    oscB.connect(voice.bGain);
+    oscSub.detune.setValueAtTime(-detuneCents * 0.15, when);
+    oscA.connect(voice.aPan);
+    oscB.connect(voice.bPan);
+    oscSub.connect(voice.subPan);
+    if (noiseBuffer) {
+      noise.buffer = noiseBuffer;
+      noise.connect(voice.noiseFilter);
+    }
 
     let lfo: OscillatorNode | null = null;
     let lfoDepth: GainNode | null = null;
@@ -268,18 +342,27 @@ export class InstrumentEngine {
       lfo.connect(lfoDepth);
       lfoDepth.connect(oscA.detune);
       lfoDepth.connect(oscB.detune);
+      lfoDepth.connect(oscSub.detune);
     }
 
     oscA.start(when);
     oscB.start(when);
+    oscSub.start(when);
+    if (noise.buffer) {
+      noise.start(when);
+    }
     lfo?.start(when);
     oscA.stop(stopAt);
     oscB.stop(stopAt);
+    oscSub.stop(stopAt);
+    if (noise.buffer) {
+      noise.stop(stopAt);
+    }
     lfo?.stop(stopAt);
     voice.activeUntil = stopAt;
     voice.state = "release";
 
-    let remainingEnded = 2;
+    let remainingEnded = 3;
     const markEnded = () => {
       remainingEnded -= 1;
       if (remainingEnded > 0) {
@@ -291,6 +374,7 @@ export class InstrumentEngine {
     };
     oscA.onended = markEnded;
     oscB.onended = markEnded;
+    oscSub.onended = markEnded;
   }
 
   playKick(track: Track, when: number, velocity: number): void {
