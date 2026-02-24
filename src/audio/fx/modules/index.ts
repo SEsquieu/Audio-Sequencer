@@ -109,11 +109,131 @@ const createEq3Module = (context: AudioContext, fx: FxInstance<"eq3">): FxModule
   };
 };
 
+const createChorusModule = (context: AudioContext, fx: FxInstance<"chorus">): FxModuleHandle => {
+  const input = context.createGain();
+  const dry = context.createGain();
+  const wet = context.createGain();
+  const output = context.createGain();
+  const delayL = context.createDelay(0.05);
+  const delayR = context.createDelay(0.05);
+  const panL = context.createStereoPanner();
+  const panR = context.createStereoPanner();
+  const lfo = context.createOscillator();
+  const lfoDepthL = context.createGain();
+  const lfoDepthR = context.createGain();
+
+  panL.pan.setValueAtTime(-0.55, context.currentTime);
+  panR.pan.setValueAtTime(0.55, context.currentTime);
+
+  input.connect(dry);
+  input.connect(delayL);
+  input.connect(delayR);
+  delayL.connect(panL);
+  delayR.connect(panR);
+  panL.connect(wet);
+  panR.connect(wet);
+  dry.connect(output);
+  wet.connect(output);
+
+  lfo.type = "sine";
+  lfo.connect(lfoDepthL);
+  lfo.connect(lfoDepthR);
+  lfoDepthL.connect(delayL.delayTime);
+  lfoDepthR.connect(delayR.delayTime);
+  lfo.start();
+
+  const setParams = (params: unknown, when: number) => {
+    const next = params as FxInstance<"chorus">["params"];
+    const rate = clamp01(next?.rate ?? 0.28);
+    const depth = clamp01(next?.depth ?? 0.45);
+    const mix = clamp01(next?.mix ?? 0.38);
+    const rateHz = 0.08 + rate * 5.4;
+    const baseDelay = 0.010 + depth * 0.007;
+    const depthSeconds = 0.0006 + depth * 0.0062;
+
+    rampParam(lfo.frequency, rateHz, when, 0.03);
+    rampParam(delayL.delayTime, baseDelay, when, 0.03);
+    rampParam(delayR.delayTime, Math.max(0.001, baseDelay * 1.08), when, 0.03);
+    rampParam(lfoDepthL.gain, depthSeconds, when, 0.03);
+    rampParam(lfoDepthR.gain, -depthSeconds * 0.93, when, 0.03);
+    rampParam(dry.gain, 1 - mix * 0.78, when, 0.03);
+    rampParam(wet.gain, mix * 0.92, when, 0.03);
+  };
+
+  setParams(fx.params, context.currentTime);
+
+  return {
+    input,
+    output,
+    setParams,
+    dispose: () => {
+      try {
+        lfo.stop();
+      } catch {
+        // already stopped
+      }
+      input.disconnect();
+      dry.disconnect();
+      wet.disconnect();
+      output.disconnect();
+      delayL.disconnect();
+      delayR.disconnect();
+      panL.disconnect();
+      panR.disconnect();
+      lfo.disconnect();
+      lfoDepthL.disconnect();
+      lfoDepthR.disconnect();
+    },
+  };
+};
+
+const createDjFilterModule = (context: AudioContext, fx: FxInstance<"djFilter">): FxModuleHandle => {
+  const input = context.createGain();
+  const filter = context.createBiquadFilter();
+  const output = context.createGain();
+
+  input.connect(filter);
+  filter.connect(output);
+
+  const setParams = (params: unknown, when: number) => {
+    const next = params as FxInstance<"djFilter">["params"];
+    const cutoffNorm = clamp01(next?.cutoff ?? 0.58);
+    const qNorm = clamp01(next?.q ?? 0.24);
+    const mode = next?.mode === "hp" ? "highpass" : "lowpass";
+    const minHz = 30;
+    const maxHz = 18000;
+    const cutoffHz = minHz * (maxHz / minHz) ** cutoffNorm;
+    filter.type = mode;
+    rampParam(filter.frequency, cutoffHz, when, 0.02);
+    rampParam(filter.Q, 0.4 + qNorm * 17, when, 0.02);
+    rampParam(output.gain, 1, when, 0.02);
+  };
+
+  setParams(fx.params, context.currentTime);
+
+  return {
+    input,
+    output,
+    setParams,
+    dispose: () => {
+      input.disconnect();
+      filter.disconnect();
+      output.disconnect();
+    },
+  };
+};
+
 export const createFxModule = (context: AudioContext, fx: FxInstance): FxModuleHandle => {
   if (fx.type === "saturator") {
     return createSaturatorModule(context, fx as FxInstance<"saturator">);
   }
-  return createEq3Module(context, fx as FxInstance<"eq3">);
+  if (fx.type === "eq3") {
+    return createEq3Module(context, fx as FxInstance<"eq3">);
+  }
+  if (fx.type === "chorus") {
+    return createChorusModule(context, fx as FxInstance<"chorus">);
+  }
+  return createDjFilterModule(context, fx as FxInstance<"djFilter">);
 };
 
 export type { FxModuleHandle };

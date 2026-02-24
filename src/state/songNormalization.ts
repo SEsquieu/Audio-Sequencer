@@ -2,7 +2,8 @@ import { SongState } from "../types/song";
 import { normalizeInstrumentParams } from "./instrumentDefaults";
 import { FxInstance, FxType, defaultFxParams } from "../audio/fx/types";
 
-const isFxType = (value: unknown): value is FxType => value === "saturator" || value === "eq3";
+const isFxType = (value: unknown): value is FxType =>
+  value === "saturator" || value === "eq3" || value === "chorus" || value === "djFilter";
 const clamp01 = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
 

@@ -1,4 +1,4 @@
-export type FxType = "saturator" | "eq3";
+export type FxType = "saturator" | "eq3" | "chorus" | "djFilter";
 
 export interface SaturatorParams {
   drive: number;
@@ -16,9 +16,23 @@ export interface Eq3Params {
   midQ: number;
 }
 
+export interface ChorusParams {
+  rate: number;
+  depth: number;
+  mix: number;
+}
+
+export interface DjFilterParams {
+  cutoff: number;
+  q: number;
+  mode: "lp" | "hp";
+}
+
 export interface FxParamsByType {
   saturator: SaturatorParams;
   eq3: Eq3Params;
+  chorus: ChorusParams;
+  djFilter: DjFilterParams;
 }
 
 export type FxParams = FxParamsByType[FxType];
@@ -43,14 +57,28 @@ export const defaultFxParams = (type: FxType): FxParamsByType[FxType] => {
       output: 0.95,
     };
   }
+  if (type === "eq3") {
+    return {
+      low: 0,
+      mid: 0,
+      high: 0,
+      lowFreq: 180,
+      midFreq: 1200,
+      highFreq: 5200,
+      midQ: 0.9,
+    };
+  }
+  if (type === "chorus") {
+    return {
+      rate: 0.28,
+      depth: 0.45,
+      mix: 0.38,
+    };
+  }
   return {
-    low: 0,
-    mid: 0,
-    high: 0,
-    lowFreq: 180,
-    midFreq: 1200,
-    highFreq: 5200,
-    midQ: 0.9,
+    cutoff: 0.58,
+    q: 0.24,
+    mode: "lp",
   };
 };
 
@@ -60,4 +88,3 @@ export const createFxInstance = (type: FxType, id: string): FxInstance => ({
   enabled: true,
   params: defaultFxParams(type) as FxParams,
 });
-

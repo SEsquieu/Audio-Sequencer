@@ -55,10 +55,12 @@ const PATTERN_PREVIEW_COLS = 16;
 const PATTERN_PREVIEW_HEIGHT = 24;
 
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const AVAILABLE_FX_TYPES: FxType[] = ["saturator", "eq3"];
+const AVAILABLE_FX_TYPES: FxType[] = ["saturator", "eq3", "chorus", "djFilter"];
 const FX_TYPE_LABEL: Record<FxType, string> = {
   saturator: "Saturator",
   eq3: "EQ3",
+  chorus: "Chorus",
+  djFilter: "DJ Filter",
 };
 const DELAY_DIVISIONS: DelayDivision[] = ["1/4", "1/8", "1/8d", "1/16"];
 const deepClone = <T,>(value: T): T => {
@@ -1658,6 +1660,102 @@ function App() {
               }
             />
             <span>{params.output.toFixed(2)}</span>
+          </label>
+        </div>
+      );
+    }
+
+    if (fx.type === "chorus") {
+      const params = fx.params as FxInstance<"chorus">["params"];
+      return (
+        <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
+          <label>
+            <span>Rate</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={params.rate}
+              onChange={(e) => updateFxParams(paramsPath, fx, { rate: Number(e.target.value) }, "Adjust Chorus Rate")}
+            />
+            <span>{params.rate.toFixed(2)}</span>
+          </label>
+          <label>
+            <span>Depth</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={params.depth}
+              onChange={(e) =>
+                updateFxParams(paramsPath, fx, { depth: Number(e.target.value) }, "Adjust Chorus Depth")
+              }
+            />
+            <span>{params.depth.toFixed(2)}</span>
+          </label>
+          <label>
+            <span>Mix</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={params.mix}
+              onChange={(e) => updateFxParams(paramsPath, fx, { mix: Number(e.target.value) }, "Adjust Chorus Mix")}
+            />
+            <span>{params.mix.toFixed(2)}</span>
+          </label>
+        </div>
+      );
+    }
+
+    if (fx.type === "djFilter") {
+      const params = fx.params as FxInstance<"djFilter">["params"];
+      return (
+        <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
+          <label className="waveform-row">
+            <span>Mode</span>
+            <select
+              value={params.mode}
+              onChange={(e) =>
+                applySingleReplace(
+                  paramsPath,
+                  { ...params, mode: e.target.value === "hp" ? "hp" : "lp" },
+                  "Adjust DJ Filter Mode"
+                )
+              }
+            >
+              <option value="lp">Low-pass</option>
+              <option value="hp">High-pass</option>
+            </select>
+          </label>
+          <label>
+            <span>Cutoff</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={params.cutoff}
+              onChange={(e) =>
+                updateFxParams(paramsPath, fx, { cutoff: Number(e.target.value) }, "Adjust DJ Filter Cutoff")
+              }
+            />
+            <span>{params.cutoff.toFixed(2)}</span>
+          </label>
+          <label>
+            <span>Q</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={params.q}
+              onChange={(e) => updateFxParams(paramsPath, fx, { q: Number(e.target.value) }, "Adjust DJ Filter Q")}
+            />
+            <span>{params.q.toFixed(2)}</span>
           </label>
         </div>
       );
