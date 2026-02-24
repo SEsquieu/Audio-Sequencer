@@ -5,6 +5,9 @@ import { FxInstance } from "./fx/types";
 interface TrackSendValues {
   delay: number;
   reverb: number;
+  delayTone: number;
+  reverbTone: number;
+  reverbLowCut: number;
 }
 
 interface TrackBusEntry {
@@ -14,7 +17,10 @@ interface TrackBusEntry {
   postGain: GainNode;
   sendTap: GainNode;
   sendDelayGain: GainNode;
+  sendDelayTone: BiquadFilterNode;
   sendReverbGain: GainNode;
+  sendReverbLowCut: BiquadFilterNode;
+  sendReverbTone: BiquadFilterNode;
   insertRack: FxRack;
   type: "synth" | "drums";
   nodes: AudioNode[];
@@ -96,6 +102,21 @@ export class MixerGraph {
     const maxGain =
       kind === "delay" ? MixerGraph.DELAY_SEND_MAX_GAIN : MixerGraph.REVERB_SEND_MAX_GAIN;
     return shaped * maxGain;
+  }
+
+  private mapTrackDelaySendToneHz(value: number): number {
+    const t = this.clamp01(value);
+    return 1200 + t * 10800;
+  }
+
+  private mapTrackReverbSendToneHz(value: number): number {
+    const t = this.clamp01(value);
+    return 900 + t * 10100;
+  }
+
+  private mapTrackReverbLowCutHz(value: number): number {
+    const t = this.clamp01(value);
+    return 40 + t * 560;
   }
 
   private mapDelayDivisionToSeconds(tempo: number, division: DelayDivision): number {
@@ -283,7 +304,10 @@ export class MixerGraph {
     const postGain = context.createGain();
     const sendTap = context.createGain();
     const sendDelayGain = context.createGain();
+    const sendDelayTone = context.createBiquadFilter();
     const sendReverbGain = context.createGain();
+    const sendReverbLowCut = context.createBiquadFilter();
+    const sendReverbTone = context.createBiquadFilter();
     const insertRack = new FxRack(context);
 
     input.gain.setValueAtTime(1, context.currentTime);
@@ -293,6 +317,12 @@ export class MixerGraph {
     sendTap.gain.setValueAtTime(1, context.currentTime);
     sendDelayGain.gain.setValueAtTime(0, context.currentTime);
     sendReverbGain.gain.setValueAtTime(0, context.currentTime);
+    sendDelayTone.type = "lowpass";
+    sendDelayTone.frequency.setValueAtTime(this.mapTrackDelaySendToneHz(0.72), context.currentTime);
+    sendReverbLowCut.type = "highpass";
+    sendReverbLowCut.frequency.setValueAtTime(this.mapTrackReverbLowCutHz(0.24), context.currentTime);
+    sendReverbTone.type = "lowpass";
+    sendReverbTone.frequency.setValueAtTime(this.mapTrackReverbSendToneHz(0.62), context.currentTime);
 
     input.connect(rackIn);
     rackOut.connect(postGain);
@@ -300,11 +330,14 @@ export class MixerGraph {
     sendTap.connect(this.getOutputNode(context));
     if (this.delayBus) {
       sendTap.connect(sendDelayGain);
-      sendDelayGain.connect(this.delayBus.in);
+      sendDelayGain.connect(sendDelayTone);
+      sendDelayTone.connect(this.delayBus.in);
     }
     if (this.reverbBus) {
       sendTap.connect(sendReverbGain);
-      sendReverbGain.connect(this.reverbBus.in);
+      sendReverbGain.connect(sendReverbLowCut);
+      sendReverbLowCut.connect(sendReverbTone);
+      sendReverbTone.connect(this.reverbBus.in);
     }
 
     const entry: TrackBusEntry = {
@@ -314,10 +347,24 @@ export class MixerGraph {
       postGain,
       sendTap,
       sendDelayGain,
+      sendDelayTone,
       sendReverbGain,
+      sendReverbLowCut,
+      sendReverbTone,
       insertRack,
       type: "synth",
-      nodes: [input, rackIn, rackOut, postGain, sendTap, sendDelayGain, sendReverbGain],
+      nodes: [
+        input,
+        rackIn,
+        rackOut,
+        postGain,
+        sendTap,
+        sendDelayGain,
+        sendDelayTone,
+        sendReverbGain,
+        sendReverbLowCut,
+        sendReverbTone,
+      ],
       disconnect: () => {
         entry.insertRack.dispose();
         for (const node of entry.nodes) {
@@ -366,10 +413,19 @@ export class MixerGraph {
   }
 
   private applyTrackSendState(context: AudioContext, trackId: string, entry: TrackBusEntry): void {
-    const values = this.trackSendById.get(trackId) ?? { delay: 0, reverb: 0 };
+    const values = this.trackSendById.get(trackId) ?? {
+      delay: 0,
+      reverb: 0,
+      delayTone: 0.72,
+      reverbTone: 0.62,
+      reverbLowCut: 0.24,
+    };
     const when = context.currentTime;
     this.rampParam(entry.sendDelayGain.gain, this.mapSendGain(values.delay, "delay"), when);
     this.rampParam(entry.sendReverbGain.gain, this.mapSendGain(values.reverb, "reverb"), when);
+    this.rampParam(entry.sendDelayTone.frequency, this.mapTrackDelaySendToneHz(values.delayTone), when, 0.02);
+    this.rampParam(entry.sendReverbTone.frequency, this.mapTrackReverbSendToneHz(values.reverbTone), when, 0.02);
+    this.rampParam(entry.sendReverbLowCut.frequency, this.mapTrackReverbLowCutHz(values.reverbLowCut), when, 0.02);
   }
 
   private applyTrackInsertFxState(trackId: string, entry: TrackBusEntry): void {
@@ -489,6 +545,9 @@ export class MixerGraph {
         this.setTrackSend(track.id, {
           delay: maybeSend.delay ?? 0,
           reverb: maybeSend.reverb ?? 0,
+          delayTone: maybeSend.delayTone ?? 0.72,
+          reverbTone: maybeSend.reverbTone ?? 0.62,
+          reverbLowCut: maybeSend.reverbLowCut ?? 0.24,
         });
       }
       const insertFx = (track as typeof track & { insertFx?: FxInstance[] }).insertFx ?? [];
@@ -511,10 +570,19 @@ export class MixerGraph {
   }
 
   setTrackSend(trackId: string, values: Partial<TrackSendValues>): void {
-    const previous = this.trackSendById.get(trackId) ?? { delay: 0, reverb: 0 };
+    const previous = this.trackSendById.get(trackId) ?? {
+      delay: 0,
+      reverb: 0,
+      delayTone: 0.72,
+      reverbTone: 0.62,
+      reverbLowCut: 0.24,
+    };
     const next: TrackSendValues = {
       delay: this.clamp01(values.delay ?? previous.delay),
       reverb: this.clamp01(values.reverb ?? previous.reverb),
+      delayTone: this.clamp01(values.delayTone ?? previous.delayTone),
+      reverbTone: this.clamp01(values.reverbTone ?? previous.reverbTone),
+      reverbLowCut: this.clamp01(values.reverbLowCut ?? previous.reverbLowCut),
     };
     this.trackSendById.set(trackId, next);
 
@@ -525,6 +593,9 @@ export class MixerGraph {
     const when = bus.input.context.currentTime;
     this.rampParam(bus.sendDelayGain.gain, this.mapSendGain(next.delay, "delay"), when);
     this.rampParam(bus.sendReverbGain.gain, this.mapSendGain(next.reverb, "reverb"), when);
+    this.rampParam(bus.sendDelayTone.frequency, this.mapTrackDelaySendToneHz(next.delayTone), when, 0.02);
+    this.rampParam(bus.sendReverbTone.frequency, this.mapTrackReverbSendToneHz(next.reverbTone), when, 0.02);
+    this.rampParam(bus.sendReverbLowCut.frequency, this.mapTrackReverbLowCutHz(next.reverbLowCut), when, 0.02);
   }
 
   setMasterSafety(

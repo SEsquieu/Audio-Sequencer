@@ -1475,7 +1475,7 @@ function App() {
               },
             },
             lane,
-            send: { delay: 0, reverb: 0 },
+            send: { delay: 0, reverb: 0, delayTone: 0.72, reverbTone: 0.62, reverbLowCut: 0.24 },
             insertFx: [],
           }
         : {
@@ -1490,7 +1490,7 @@ function App() {
               },
             },
             lane,
-            send: { delay: 0, reverb: 0 },
+            send: { delay: 0, reverb: 0, delayTone: 0.72, reverbTone: 0.62, reverbLowCut: 0.24 },
             insertFx: [],
           };
 
@@ -3255,6 +3255,60 @@ function App() {
                           }
                         />
                         <span>{track.send.reverb.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Delay Tone</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={track.send.delayTone}
+                          onChange={(e) =>
+                            applySingleReplace(
+                              `/tracks/${safeTrackIndex}/send/delayTone`,
+                              Number(e.target.value),
+                              `Adjust ${track.name} Delay Tone`
+                            )
+                          }
+                        />
+                        <span>{track.send.delayTone.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Reverb Tone</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={track.send.reverbTone}
+                          onChange={(e) =>
+                            applySingleReplace(
+                              `/tracks/${safeTrackIndex}/send/reverbTone`,
+                              Number(e.target.value),
+                              `Adjust ${track.name} Reverb Tone`
+                            )
+                          }
+                        />
+                        <span>{track.send.reverbTone.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Reverb LowCut</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={track.send.reverbLowCut}
+                          onChange={(e) =>
+                            applySingleReplace(
+                              `/tracks/${safeTrackIndex}/send/reverbLowCut`,
+                              Number(e.target.value),
+                              `Adjust ${track.name} Reverb Low Cut`
+                            )
+                          }
+                        />
+                        <span>{track.send.reverbLowCut.toFixed(2)}</span>
                       </label>
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.35rem" }}>

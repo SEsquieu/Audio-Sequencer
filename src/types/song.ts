@@ -59,6 +59,9 @@ export interface Track {
   send: {
     delay: number;
     reverb: number;
+    delayTone: number;
+    reverbTone: number;
+    reverbLowCut: number;
   };
   insertFx: FxInstance[];
 }

@@ -3,7 +3,13 @@ import { buildDefaultInstrument } from "./instrumentDefaults";
 
 const createEmptySynthSteps = () => Array.from({ length: 16 }, () => []);
 const createEmptyDrumSteps = () => Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
-const createDefaultTrackSend = () => ({ delay: 0, reverb: 0 });
+const createDefaultTrackSend = () => ({
+  delay: 0,
+  reverb: 0,
+  delayTone: 0.72,
+  reverbTone: 0.62,
+  reverbLowCut: 0.24,
+});
 const createDefaultSendFx = () => ({
   delay: {
     division: "1/8" as const,

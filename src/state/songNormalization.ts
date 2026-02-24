@@ -73,6 +73,24 @@ export const normalizeSongState = (song: SongState): SongState => ({
         typeof (track as typeof track & { send?: { reverb?: number } }).send?.reverb === "number"
           ? Math.max(0, Math.min(1, (track as typeof track & { send?: { reverb?: number } }).send!.reverb!))
           : 0,
+      delayTone:
+        typeof (track as typeof track & { send?: { delayTone?: number } }).send?.delayTone === "number"
+          ? Math.max(0, Math.min(1, (track as typeof track & { send?: { delayTone?: number } }).send!.delayTone!))
+          : 0.72,
+      reverbTone:
+        typeof (track as typeof track & { send?: { reverbTone?: number } }).send?.reverbTone === "number"
+          ? Math.max(
+              0,
+              Math.min(1, (track as typeof track & { send?: { reverbTone?: number } }).send!.reverbTone!)
+            )
+          : 0.62,
+      reverbLowCut:
+        typeof (track as typeof track & { send?: { reverbLowCut?: number } }).send?.reverbLowCut === "number"
+          ? Math.max(
+              0,
+              Math.min(1, (track as typeof track & { send?: { reverbLowCut?: number } }).send!.reverbLowCut!)
+            )
+          : 0.24,
     },
     insertFx: normalizeFxInstances((track as typeof track & { insertFx?: unknown }).insertFx),
   })),
