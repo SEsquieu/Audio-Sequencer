@@ -18,7 +18,7 @@ import { AdsrEnvelopeEditor } from "./components/AdsrEnvelopeEditor";
 import { FilterEqPad } from "./components/FilterEqPad";
 import { SynthModPads } from "./components/SynthModPads";
 import { buildDefaultInstrument } from "./state/instrumentDefaults";
-import { getMatchingPresetId, getPresetsForType } from "./state/instrumentPresets";
+import { DEFAULT_PRESET_SEND, getMatchingPresetId, getPresetsForType } from "./state/instrumentPresets";
 import { useSong } from "./state/songContext";
 import {
   DelayDivision,
@@ -1417,18 +1417,14 @@ function App() {
         path: `/tracks/${safeTrackIndex}/instrument`,
         value: { ...preset.params },
       },
-      ...(preset.send
-        ? ([
-            {
-              op: "replace",
-              path: `/tracks/${safeTrackIndex}/send`,
-              value: {
-                ...track.send,
-                ...preset.send,
-              },
-            },
-          ] as JsonPatchOp[])
-        : []),
+      {
+        op: "replace",
+        path: `/tracks/${safeTrackIndex}/send`,
+        value: {
+          ...DEFAULT_PRESET_SEND,
+          ...preset.send,
+        },
+      },
     ]);
   };
 
