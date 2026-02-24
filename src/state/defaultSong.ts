@@ -3,11 +3,13 @@ import { buildDefaultInstrument } from "./instrumentDefaults";
 
 const createEmptySynthSteps = () => Array.from({ length: 16 }, () => []);
 const createEmptyDrumSteps = () => Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
+const createDefaultTrackSend = () => ({ delay: 0, reverb: 0 });
 
 export const createDefaultSong = (): SongState => ({
   tempo: 120,
   swing: 0,
   bars: 8,
+  masterFx: [],
   tracks: [
     {
       id: "t-lead",
@@ -23,6 +25,8 @@ export const createDefaultSong = (): SongState => ({
         },
       },
       lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
+      send: createDefaultTrackSend(),
+      insertFx: [],
     },
     {
       id: "t-bass",
@@ -56,6 +60,8 @@ export const createDefaultSong = (): SongState => ({
         },
       },
       lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
+      send: createDefaultTrackSend(),
+      insertFx: [],
     },
     {
       id: "t-drums",
@@ -71,6 +77,8 @@ export const createDefaultSong = (): SongState => ({
         },
       },
       lane: ["1", "1", "1", "1", "0", "0", "0", "0"],
+      send: createDefaultTrackSend(),
+      insertFx: [],
     },
   ],
 });

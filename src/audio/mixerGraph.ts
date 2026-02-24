@@ -1,4 +1,6 @@
 import { SongState } from "../types/song";
+import { FxRack } from "./fx/FxRack";
+import { FxInstance } from "./fx/types";
 
 interface TrackSendValues {
   delay: number;
@@ -13,6 +15,7 @@ interface TrackBusEntry {
   sendTap: GainNode;
   sendDelayGain: GainNode;
   sendReverbGain: GainNode;
+  insertRack: FxRack;
   type: "synth" | "drums";
   nodes: AudioNode[];
   disconnect: () => void;
@@ -32,6 +35,7 @@ export class MixerGraph {
   private masterIn: GainNode | null = null;
   private masterRackIn: GainNode | null = null;
   private masterRackOut: GainNode | null = null;
+  private masterInsertRack: FxRack | null = null;
   private masterSafetyDrive: GainNode | null = null;
   private masterSafetyShaper: WaveShaperNode | null = null;
   private masterSafetyOutput: GainNode | null = null;
@@ -41,6 +45,8 @@ export class MixerGraph {
   private trackBuses = new Map<string, TrackBusEntry>();
   private trackTypeById = new Map<string, "synth" | "drums">();
   private trackSendById = new Map<string, TrackSendValues>();
+  private trackInsertFxById = new Map<string, FxInstance[]>();
+  private masterFx: FxInstance[] = [];
   private masterVolume = 0.8;
   private masterSafetyEnabled = false;
   private masterSafetyAmount = 0;
@@ -77,6 +83,7 @@ export class MixerGraph {
     this.masterIn = context.createGain();
     this.masterRackIn = context.createGain();
     this.masterRackOut = context.createGain();
+    this.masterInsertRack = new FxRack(context);
     this.masterSafetyDrive = context.createGain();
     this.masterSafetyShaper = context.createWaveShaper();
     this.masterSafetyOutput = context.createGain();
@@ -92,7 +99,8 @@ export class MixerGraph {
     this.masterGain.gain.setValueAtTime(this.masterVolume, context.currentTime);
 
     this.masterIn.connect(this.masterRackIn);
-    this.masterRackIn.connect(this.masterRackOut);
+    this.masterRackIn.connect(this.masterInsertRack.rackIn);
+    this.masterInsertRack.rackOut.connect(this.masterRackOut);
     this.masterRackOut.connect(this.masterSafetyDrive);
     this.masterSafetyDrive.connect(this.masterSafetyShaper);
     this.masterSafetyShaper.connect(this.masterSafetyOutput);
@@ -105,6 +113,7 @@ export class MixerGraph {
     this.reverbBus.returnGain.connect(this.masterIn);
 
     this.setMasterSafety({ enabled: this.masterSafetyEnabled, amount: this.masterSafetyAmount }, context);
+    this.masterInsertRack.setFxInstances(this.masterFx);
   }
 
   getOutputNode(context: AudioContext): AudioNode {
@@ -124,7 +133,8 @@ export class MixerGraph {
 
   private createSynthBus(context: AudioContext): TrackBusEntry {
     const base = this.createTrackBusBase(context);
-    base.rackIn.connect(base.rackOut);
+    base.rackIn.connect(base.insertRack.rackIn);
+    base.insertRack.rackOut.connect(base.rackOut);
     return base;
   }
 
@@ -193,6 +203,7 @@ export class MixerGraph {
     const sendTap = context.createGain();
     const sendDelayGain = context.createGain();
     const sendReverbGain = context.createGain();
+    const insertRack = new FxRack(context);
 
     input.gain.setValueAtTime(1, context.currentTime);
     rackIn.gain.setValueAtTime(1, context.currentTime);
@@ -223,9 +234,11 @@ export class MixerGraph {
       sendTap,
       sendDelayGain,
       sendReverbGain,
+      insertRack,
       type: "synth",
       nodes: [input, rackIn, rackOut, postGain, sendTap, sendDelayGain, sendReverbGain],
       disconnect: () => {
+        entry.insertRack.dispose();
         for (const node of entry.nodes) {
           node.disconnect();
         }
@@ -262,7 +275,8 @@ export class MixerGraph {
     drive.connect(compressor);
     compressor.connect(lowTone);
     lowTone.connect(highTone);
-    highTone.connect(base.rackOut);
+    highTone.connect(base.insertRack.rackIn);
+    base.insertRack.rackOut.connect(base.rackOut);
 
     base.type = "drums";
     base.postGain.gain.setValueAtTime(MixerGraph.TRACK_POST_TRIM_DRUMS, context.currentTime);
@@ -275,6 +289,10 @@ export class MixerGraph {
     const when = context.currentTime;
     this.rampParam(entry.sendDelayGain.gain, this.clamp01(values.delay), when);
     this.rampParam(entry.sendReverbGain.gain, this.clamp01(values.reverb), when);
+  }
+
+  private applyTrackInsertFxState(trackId: string, entry: TrackBusEntry): void {
+    entry.insertRack.setFxInstances(this.trackInsertFxById.get(trackId) ?? []);
   }
 
   private fadeAndDisposeTrackBus(context: AudioContext, entry: TrackBusEntry): void {
@@ -297,6 +315,7 @@ export class MixerGraph {
       const desiredType = this.trackTypeById.get(trackId) ?? "synth";
       if (existing.type === desiredType) {
         this.applyTrackSendState(context, trackId, existing);
+        this.applyTrackInsertFxState(trackId, existing);
         return existing.input;
       }
       this.fadeAndDisposeTrackBus(context, existing);
@@ -306,12 +325,15 @@ export class MixerGraph {
     const type = this.trackTypeById.get(trackId) ?? "synth";
     const next = type === "drums" ? this.createDrumBus(context) : this.createSynthBus(context);
     this.applyTrackSendState(context, trackId, next);
+    this.applyTrackInsertFxState(trackId, next);
     this.trackBuses.set(trackId, next);
     return next.input;
   }
 
   pruneTrackBuses(song: SongState): void {
     this.trackTypeById.clear();
+    this.masterFx = song.masterFx ?? [];
+    this.masterInsertRack?.setFxInstances(this.masterFx);
     for (const track of song.tracks) {
       this.trackTypeById.set(track.id, track.type);
       const maybeSend = (track as typeof track & {
@@ -323,6 +345,9 @@ export class MixerGraph {
           reverb: maybeSend.reverb ?? 0,
         });
       }
+      const insertFx = (track as typeof track & { insertFx?: FxInstance[] }).insertFx ?? [];
+      this.trackInsertFxById.set(track.id, insertFx);
+      this.trackBuses.get(track.id)?.insertRack.setFxInstances(insertFx);
     }
 
     const liveTrackIds = new Set(song.tracks.map((track) => track.id));
@@ -331,6 +356,7 @@ export class MixerGraph {
         continue;
       }
       this.trackSendById.delete(trackId);
+      this.trackInsertFxById.delete(trackId);
       // Existing nodes may still be ringing; fade out before disconnecting.
       const audioContext = bus.input.context as AudioContext;
       this.fadeAndDisposeTrackBus(audioContext, bus);

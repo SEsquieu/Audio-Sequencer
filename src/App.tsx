@@ -13,6 +13,7 @@ import {
 } from "react";
 import { aiProposePatch } from "./ai/aiProposePatch";
 import { AudioEngine, getEffectiveLoopBars } from "./audio/engine";
+import { FxType, createFxInstance } from "./audio/fx/types";
 import { AdsrEnvelopeEditor } from "./components/AdsrEnvelopeEditor";
 import { FilterEqPad } from "./components/FilterEqPad";
 import { SynthModPads } from "./components/SynthModPads";
@@ -44,6 +45,11 @@ const PATTERN_PREVIEW_COLS = 16;
 const PATTERN_PREVIEW_HEIGHT = 24;
 
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const AVAILABLE_FX_TYPES: FxType[] = ["saturator", "eq3"];
+const FX_TYPE_LABEL: Record<FxType, string> = {
+  saturator: "Saturator",
+  eq3: "EQ3",
+};
 const deepClone = <T,>(value: T): T => {
   if (typeof structuredClone === "function") {
     return structuredClone(value);
@@ -1452,6 +1458,8 @@ function App() {
               },
             },
             lane,
+            send: { delay: 0, reverb: 0 },
+            insertFx: [],
           }
         : {
             id,
@@ -1465,6 +1473,8 @@ function App() {
               },
             },
             lane,
+            send: { delay: 0, reverb: 0 },
+            insertFx: [],
           };
 
     createAndCommit(`Add ${type === "synth" ? "Synth" : "Drums"} Track`, [
@@ -1540,6 +1550,47 @@ function App() {
     setTimelinePatternClipboard(null);
     setOctaveBase(DEFAULT_OCTAVE_BASE);
     setOctaveTransition(null);
+  };
+
+  const addTrackFx = (trackIndex: number, type: FxType) => {
+    createAndCommit(`Add ${FX_TYPE_LABEL[type]} FX`, [
+      {
+        op: "add",
+        path: `/tracks/${trackIndex}/insertFx/-`,
+        value: createFxInstance(type, uid()),
+      },
+    ]);
+  };
+
+  const addMasterFx = (type: FxType) => {
+    createAndCommit(`Add Master ${FX_TYPE_LABEL[type]} FX`, [
+      {
+        op: "add",
+        path: "/masterFx/-",
+        value: createFxInstance(type, uid()),
+      },
+    ]);
+  };
+
+  const toggleFxEnabled = (path: string, enabled: boolean) => {
+    applySingleReplace(path, !enabled, enabled ? "Disable FX" : "Enable FX");
+  };
+
+  const removeFx = (path: string) => {
+    createAndCommit("Remove FX", [{ op: "remove", path }]);
+  };
+
+  const moveFxItem = (path: string, index: number, direction: -1 | 1, list: unknown[]) => {
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= list.length) {
+      return;
+    }
+    const currentValue = deepClone(list[index]);
+    const targetValue = deepClone(list[targetIndex]);
+    createAndCommit(direction < 0 ? "Move FX Up" : "Move FX Down", [
+      { op: "replace", path: `${path}/${index}`, value: targetValue },
+      { op: "replace", path: `${path}/${targetIndex}`, value: currentValue },
+    ]);
   };
 
   const onSaveSongToFile = useCallback(() => {
@@ -2908,6 +2959,189 @@ function App() {
           </span>
         </div>
       </header>
+
+      <details
+        open
+        style={{
+          margin: "0 0 0.85rem",
+          padding: "0.6rem 0.8rem",
+          border: "1px solid rgba(255,255,255,0.14)",
+          borderRadius: "0.75rem",
+          background: "rgba(10,12,16,0.45)",
+        }}
+      >
+        <summary style={{ cursor: "pointer", fontWeight: 600 }}>FX Rack Dev (Phase 2)</summary>
+        {track && (
+          <div style={{ display: "grid", gap: "0.85rem", marginTop: "0.65rem" }}>
+            <section
+              style={{
+                display: "grid",
+                gap: "0.5rem",
+                padding: "0.65rem",
+                borderRadius: "0.65rem",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <strong>
+                Track Sends: {track.name} ({track.type})
+              </strong>
+              <label style={{ display: "grid", gap: "0.25rem" }}>
+                Delay Send
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={track.send.delay}
+                  onChange={(e) =>
+                    applySingleReplace(
+                      `/tracks/${safeTrackIndex}/send/delay`,
+                      Number(e.target.value),
+                      `Adjust ${track.name} Delay Send`
+                    )
+                  }
+                />
+                <span>{Math.round(track.send.delay * 100)}%</span>
+              </label>
+              <label style={{ display: "grid", gap: "0.25rem" }}>
+                Reverb Send
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  value={track.send.reverb}
+                  onChange={(e) =>
+                    applySingleReplace(
+                      `/tracks/${safeTrackIndex}/send/reverb`,
+                      Number(e.target.value),
+                      `Adjust ${track.name} Reverb Send`
+                    )
+                  }
+                />
+                <span>{Math.round(track.send.reverb * 100)}%</span>
+              </label>
+            </section>
+
+            <section
+              style={{
+                display: "grid",
+                gap: "0.5rem",
+                padding: "0.65rem",
+                borderRadius: "0.65rem",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <strong>Track Insert FX</strong>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                {AVAILABLE_FX_TYPES.map((fxType) => (
+                  <button key={`track-add-${fxType}`} type="button" onClick={() => addTrackFx(safeTrackIndex, fxType)}>
+                    + {FX_TYPE_LABEL[fxType]}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "grid", gap: "0.35rem" }}>
+                {track.insertFx.length === 0 && <span style={{ opacity: 0.7 }}>No insert FX</span>}
+                {track.insertFx.map((fx, index) => (
+                  <div
+                    key={fx.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto auto auto auto",
+                      alignItems: "center",
+                      gap: "0.35rem",
+                    }}
+                  >
+                    <span>
+                      {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleFxEnabled(`/tracks/${safeTrackIndex}/insertFx/${index}/enabled`, fx.enabled)}
+                    >
+                      {fx.enabled ? "Disable" : "Enable"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, -1, track.insertFx)}
+                      disabled={index === 0}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, 1, track.insertFx)}
+                      disabled={index === track.insertFx.length - 1}
+                    >
+                      Down
+                    </button>
+                    <button type="button" onClick={() => removeFx(`/tracks/${safeTrackIndex}/insertFx/${index}`)}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section
+              style={{
+                display: "grid",
+                gap: "0.5rem",
+                padding: "0.65rem",
+                borderRadius: "0.65rem",
+                border: "1px solid rgba(255,255,255,0.08)",
+              }}
+            >
+              <strong>Master Insert FX</strong>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem" }}>
+                {AVAILABLE_FX_TYPES.map((fxType) => (
+                  <button key={`master-add-${fxType}`} type="button" onClick={() => addMasterFx(fxType)}>
+                    + {FX_TYPE_LABEL[fxType]}
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: "grid", gap: "0.35rem" }}>
+                {song.masterFx.length === 0 && <span style={{ opacity: 0.7 }}>No master FX</span>}
+                {song.masterFx.map((fx, index) => (
+                  <div
+                    key={fx.id}
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto auto auto auto",
+                      alignItems: "center",
+                      gap: "0.35rem",
+                    }}
+                  >
+                    <span>
+                      {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
+                    </span>
+                    <button type="button" onClick={() => toggleFxEnabled(`/masterFx/${index}/enabled`, fx.enabled)}>
+                      {fx.enabled ? "Disable" : "Enable"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveFxItem("/masterFx", index, -1, song.masterFx)}
+                      disabled={index === 0}
+                    >
+                      Up
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveFxItem("/masterFx", index, 1, song.masterFx)}
+                      disabled={index === song.masterFx.length - 1}
+                    >
+                      Down
+                    </button>
+                    <button type="button" onClick={() => removeFx(`/masterFx/${index}`)}>
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </div>
+        )}
+      </details>
 
       <main className="panel">
         <div className="workspace">

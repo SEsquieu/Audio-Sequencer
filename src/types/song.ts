@@ -1,3 +1,5 @@
+import type { FxInstance } from "../audio/fx/types";
+
 export type TrackType = "synth" | "drums";
 export type WaveformType = "sine" | "triangle" | "sawtooth" | "square";
 
@@ -54,6 +56,11 @@ export interface Track {
   instrument: InstrumentParams;
   patterns: Record<string, Pattern>;
   lane: string[];
+  send: {
+    delay: number;
+    reverb: number;
+  };
+  insertFx: FxInstance[];
 }
 
 export interface SongState {
@@ -61,6 +68,7 @@ export interface SongState {
   swing: number;
   bars: number;
   tracks: Track[];
+  masterFx: FxInstance[];
 }
 
 export type JsonPatchOp = {
