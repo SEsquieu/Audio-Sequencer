@@ -1,10 +1,15 @@
 import { FxInstance, clamp01, clampRange } from "../types";
 import { rampParam } from "../util";
 
+export interface FxRenderOptions {
+  ecoMode: boolean;
+}
+
 interface FxModuleHandle {
   input: AudioNode;
   output: AudioNode;
   setParams: (params: unknown, when: number) => void;
+  setRenderOptions?: (options: FxRenderOptions, when: number) => void;
   dispose: () => void;
 }
 
@@ -19,7 +24,11 @@ const makeDriveCurve = (amount: number): Float32Array => {
   return curve;
 };
 
-const createSaturatorModule = (context: AudioContext, fx: FxInstance<"saturator">): FxModuleHandle => {
+const createSaturatorModule = (
+  context: AudioContext,
+  fx: FxInstance<"saturator">,
+  options: FxRenderOptions
+): FxModuleHandle => {
   const input = context.createGain();
   const dry = context.createGain();
   const pre = context.createGain();
@@ -27,7 +36,7 @@ const createSaturatorModule = (context: AudioContext, fx: FxInstance<"saturator"
   const wet = context.createGain();
   const output = context.createGain();
 
-  shaper.oversample = "2x";
+  shaper.oversample = options.ecoMode ? "none" : "2x";
 
   input.connect(dry);
   input.connect(pre);
@@ -54,6 +63,9 @@ const createSaturatorModule = (context: AudioContext, fx: FxInstance<"saturator"
     input,
     output,
     setParams,
+    setRenderOptions(nextOptions) {
+      shaper.oversample = nextOptions.ecoMode ? "none" : "2x";
+    },
     dispose: () => {
       input.disconnect();
       dry.disconnect();
@@ -109,7 +121,11 @@ const createEq3Module = (context: AudioContext, fx: FxInstance<"eq3">): FxModule
   };
 };
 
-const createChorusModule = (context: AudioContext, fx: FxInstance<"chorus">): FxModuleHandle => {
+const createChorusModule = (
+  context: AudioContext,
+  fx: FxInstance<"chorus">,
+  options: FxRenderOptions
+): FxModuleHandle => {
   const input = context.createGain();
   const dry = context.createGain();
   const wet = context.createGain();
@@ -147,9 +163,9 @@ const createChorusModule = (context: AudioContext, fx: FxInstance<"chorus">): Fx
     const rate = clamp01(next?.rate ?? 0.28);
     const depth = clamp01(next?.depth ?? 0.45);
     const mix = clamp01(next?.mix ?? 0.38);
-    const rateHz = 0.08 + rate * 5.4;
+    const rateHz = 0.08 + rate * (options.ecoMode ? 3.2 : 5.4);
     const baseDelay = 0.010 + depth * 0.007;
-    const depthSeconds = 0.0006 + depth * 0.0062;
+    const depthSeconds = 0.0006 + depth * (options.ecoMode ? 0.0038 : 0.0062);
 
     rampParam(lfo.frequency, rateHz, when, 0.03);
     rampParam(delayL.delayTime, baseDelay, when, 0.03);
@@ -158,6 +174,8 @@ const createChorusModule = (context: AudioContext, fx: FxInstance<"chorus">): Fx
     rampParam(lfoDepthR.gain, -depthSeconds * 0.93, when, 0.03);
     rampParam(dry.gain, 1 - mix * 0.78, when, 0.03);
     rampParam(wet.gain, mix * 0.92, when, 0.03);
+    rampParam(panL.pan, options.ecoMode ? -0.28 : -0.55, when, 0.03);
+    rampParam(panR.pan, options.ecoMode ? 0.28 : 0.55, when, 0.03);
   };
 
   setParams(fx.params, context.currentTime);
@@ -166,6 +184,10 @@ const createChorusModule = (context: AudioContext, fx: FxInstance<"chorus">): Fx
     input,
     output,
     setParams,
+    setRenderOptions(nextOptions, when) {
+      options = nextOptions;
+      setParams(fx.params, when);
+    },
     dispose: () => {
       try {
         lfo.stop();
@@ -223,15 +245,19 @@ const createDjFilterModule = (context: AudioContext, fx: FxInstance<"djFilter">)
   };
 };
 
-export const createFxModule = (context: AudioContext, fx: FxInstance): FxModuleHandle => {
+export const createFxModule = (
+  context: AudioContext,
+  fx: FxInstance,
+  options: FxRenderOptions = { ecoMode: false }
+): FxModuleHandle => {
   if (fx.type === "saturator") {
-    return createSaturatorModule(context, fx as FxInstance<"saturator">);
+    return createSaturatorModule(context, fx as FxInstance<"saturator">, options);
   }
   if (fx.type === "eq3") {
     return createEq3Module(context, fx as FxInstance<"eq3">);
   }
   if (fx.type === "chorus") {
-    return createChorusModule(context, fx as FxInstance<"chorus">);
+    return createChorusModule(context, fx as FxInstance<"chorus">, options);
   }
   return createDjFilterModule(context, fx as FxInstance<"djFilter">);
 };

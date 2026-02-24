@@ -93,6 +93,10 @@ export interface MasterSafetyState {
   amount: number;
 }
 
+export interface PerformanceState {
+  ecoMode: boolean;
+}
+
 export interface SongState {
   tempo: number;
   swing: number;
@@ -101,6 +105,7 @@ export interface SongState {
   masterFx: FxInstance[];
   sendFx: SendFxState;
   masterSafety: MasterSafetyState;
+  performance: PerformanceState;
 }
 
 export type JsonPatchOp = {

@@ -23,6 +23,9 @@ interface TrackBusEntry {
   sendReverbTone: BiquadFilterNode;
   insertRack: FxRack;
   type: "synth" | "drums";
+  baseTrim: number;
+  isMuted: boolean;
+  drumDrive?: WaveShaperNode;
   nodes: AudioNode[];
   disconnect: () => void;
 }
@@ -91,6 +94,8 @@ export class MixerGraph {
     wet: 0.42,
     eco: false,
   };
+  private ecoMode = false;
+  private mutedTrackIds = new Set<string>();
 
   private clamp01(value: number): number {
     return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
@@ -117,6 +122,14 @@ export class MixerGraph {
   private mapTrackReverbLowCutHz(value: number): number {
     const t = this.clamp01(value);
     return 40 + t * 560;
+  }
+
+  private getTrackBaseTrim(type: "synth" | "drums"): number {
+    return type === "drums" ? MixerGraph.TRACK_POST_TRIM_DRUMS : MixerGraph.TRACK_POST_TRIM_SYNTH;
+  }
+
+  private applyTrackAudibilityState(entry: TrackBusEntry, when: number): void {
+    this.rampParam(entry.postGain.gain, entry.isMuted ? 0 : entry.baseTrim, when, 0.015);
   }
 
   private mapDelayDivisionToSeconds(tempo: number, division: DelayDivision): number {
@@ -173,7 +186,7 @@ export class MixerGraph {
     this.masterRackOut.gain.setValueAtTime(1, context.currentTime);
     this.masterSafetyDrive.gain.setValueAtTime(1, context.currentTime);
     this.masterSafetyShaper.curve = null;
-    this.masterSafetyShaper.oversample = "2x";
+    this.masterSafetyShaper.oversample = this.ecoMode ? "none" : "2x";
     this.masterSafetyOutput.gain.setValueAtTime(1, context.currentTime);
     this.masterGain.gain.setValueAtTime(this.masterVolume, context.currentTime);
 
@@ -192,6 +205,7 @@ export class MixerGraph {
     this.reverbBus.returnGain.connect(this.masterIn);
 
     this.setMasterSafety({ enabled: this.masterSafetyEnabled, amount: this.masterSafetyAmount }, context);
+    this.masterInsertRack.setRenderOptions({ ecoMode: this.ecoMode });
     this.masterInsertRack.setFxInstances(this.masterFx);
   }
 
@@ -313,7 +327,7 @@ export class MixerGraph {
     input.gain.setValueAtTime(1, context.currentTime);
     rackIn.gain.setValueAtTime(1, context.currentTime);
     rackOut.gain.setValueAtTime(1, context.currentTime);
-    postGain.gain.setValueAtTime(MixerGraph.TRACK_POST_TRIM_SYNTH, context.currentTime);
+    postGain.gain.setValueAtTime(this.getTrackBaseTrim("synth"), context.currentTime);
     sendTap.gain.setValueAtTime(1, context.currentTime);
     sendDelayGain.gain.setValueAtTime(0, context.currentTime);
     sendReverbGain.gain.setValueAtTime(0, context.currentTime);
@@ -353,6 +367,8 @@ export class MixerGraph {
       sendReverbTone,
       insertRack,
       type: "synth",
+      baseTrim: this.getTrackBaseTrim("synth"),
+      isMuted: false,
       nodes: [
         input,
         rackIn,
@@ -383,7 +399,7 @@ export class MixerGraph {
     const highTone = context.createBiquadFilter();
 
     drive.curve = this.createDriveCurve(0.22) as unknown as Float32Array<ArrayBuffer>;
-    drive.oversample = "2x";
+    drive.oversample = this.ecoMode ? "none" : "2x";
 
     compressor.threshold.setValueAtTime(-16, context.currentTime);
     compressor.knee.setValueAtTime(22, context.currentTime);
@@ -407,7 +423,9 @@ export class MixerGraph {
     base.insertRack.rackOut.connect(base.rackOut);
 
     base.type = "drums";
-    base.postGain.gain.setValueAtTime(MixerGraph.TRACK_POST_TRIM_DRUMS, context.currentTime);
+    base.baseTrim = this.getTrackBaseTrim("drums");
+    base.drumDrive = drive;
+    base.postGain.gain.setValueAtTime(base.baseTrim, context.currentTime);
     base.nodes.push(drive, compressor, lowTone, highTone);
     return base;
   }
@@ -429,6 +447,7 @@ export class MixerGraph {
   }
 
   private applyTrackInsertFxState(trackId: string, entry: TrackBusEntry): void {
+    entry.insertRack.setRenderOptions({ ecoMode: this.ecoMode });
     entry.insertRack.setFxInstances(this.trackInsertFxById.get(trackId) ?? []);
   }
 
@@ -438,8 +457,10 @@ export class MixerGraph {
     }
     const when = context.currentTime;
     const delayTime = this.mapDelayDivisionToSeconds(tempo, this.delayFx.division);
-    const feedback = Math.max(0, Math.min(0.88, this.delayFx.feedback * 0.88));
-    const wet = Math.max(0, Math.min(0.7, this.delayFx.wet * 0.7));
+    const feedbackCap = this.ecoMode ? 0.74 : 0.88;
+    const wetCap = this.ecoMode ? 0.55 : 0.7;
+    const feedback = Math.max(0, Math.min(feedbackCap, this.delayFx.feedback * feedbackCap));
+    const wet = Math.max(0, Math.min(wetCap, this.delayFx.wet * wetCap));
     const toneHz = 1800 + this.delayFx.tone * 9200;
     this.rampParam(this.delayBus.delay.delayTime, delayTime, when, 0.03);
     this.rampParam(this.delayBus.feedbackGain.gain, feedback, when, 0.03);
@@ -489,8 +510,22 @@ export class MixerGraph {
     if (!context) {
       return;
     }
+    this.ecoMode = song.performance?.ecoMode === true;
+    this.masterInsertRack?.setRenderOptions({ ecoMode: this.ecoMode });
+    if (this.masterSafetyShaper) {
+      this.masterSafetyShaper.oversample = this.ecoMode ? "none" : "2x";
+    }
+    for (const bus of this.trackBuses.values()) {
+      bus.insertRack.setRenderOptions({ ecoMode: this.ecoMode });
+      if (bus.drumDrive) {
+        bus.drumDrive.oversample = this.ecoMode ? "none" : "2x";
+      }
+    }
     this.delayFx = song.sendFx?.delay ?? this.delayFx;
-    this.reverbFx = song.sendFx?.reverb ?? this.reverbFx;
+    this.reverbFx = {
+      ...(song.sendFx?.reverb ?? this.reverbFx),
+      eco: this.ecoMode || (song.sendFx?.reverb?.eco ?? false),
+    };
     this.applyDelayBusFx(context, song.tempo);
     this.applyReverbBusFx(context);
     this.setMasterSafety(song.masterSafety ?? { enabled: false, amount: 0 });
@@ -515,6 +550,8 @@ export class MixerGraph {
     if (existing) {
       const desiredType = this.trackTypeById.get(trackId) ?? "synth";
       if (existing.type === desiredType) {
+        existing.isMuted = this.mutedTrackIds.has(trackId);
+        this.applyTrackAudibilityState(existing, context.currentTime);
         this.applyTrackSendState(context, trackId, existing);
         this.applyTrackInsertFxState(trackId, existing);
         return existing.input;
@@ -525,6 +562,9 @@ export class MixerGraph {
 
     const type = this.trackTypeById.get(trackId) ?? "synth";
     const next = type === "drums" ? this.createDrumBus(context) : this.createSynthBus(context);
+    next.baseTrim = this.getTrackBaseTrim(next.type);
+    next.isMuted = this.mutedTrackIds.has(trackId);
+    this.applyTrackAudibilityState(next, context.currentTime);
     this.applyTrackSendState(context, trackId, next);
     this.applyTrackInsertFxState(trackId, next);
     this.trackBuses.set(trackId, next);
@@ -552,7 +592,13 @@ export class MixerGraph {
       }
       const insertFx = (track as typeof track & { insertFx?: FxInstance[] }).insertFx ?? [];
       this.trackInsertFxById.set(track.id, insertFx);
-      this.trackBuses.get(track.id)?.insertRack.setFxInstances(insertFx);
+      const existingBus = this.trackBuses.get(track.id);
+      if (existingBus) {
+        existingBus.isMuted = this.mutedTrackIds.has(track.id);
+        this.applyTrackAudibilityState(existingBus, existingBus.input.context.currentTime);
+        existingBus.insertRack.setRenderOptions({ ecoMode: this.ecoMode });
+        existingBus.insertRack.setFxInstances(insertFx);
+      }
     }
 
     const liveTrackIds = new Set(song.tracks.map((track) => track.id));
@@ -566,6 +612,18 @@ export class MixerGraph {
       const audioContext = bus.input.context as AudioContext;
       this.fadeAndDisposeTrackBus(audioContext, bus);
       this.trackBuses.delete(trackId);
+    }
+  }
+
+  setMutedTrackIds(trackIds: Iterable<string>): void {
+    this.mutedTrackIds = new Set(trackIds);
+    const when = this.masterIn?.context.currentTime;
+    if (typeof when !== "number") {
+      return;
+    }
+    for (const [trackId, bus] of this.trackBuses.entries()) {
+      bus.isMuted = this.mutedTrackIds.has(trackId);
+      this.applyTrackAudibilityState(bus, when);
     }
   }
 

@@ -110,6 +110,7 @@ export class AudioEngine {
 
   setMutedTrackIds(trackIds: string[]) {
     this.mutedTrackIds = new Set(trackIds);
+    this.mixer.setMutedTrackIds(this.mutedTrackIds);
   }
 
   syncSongState(song: SongState) {
@@ -118,6 +119,7 @@ export class AudioEngine {
       return;
     }
     this.mixer.pruneTrackBuses(song);
+    this.mixer.setMutedTrackIds(this.mutedTrackIds);
   }
 
   getTimingDiagnostics(): EngineTimingDiagnostics {

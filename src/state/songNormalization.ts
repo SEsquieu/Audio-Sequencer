@@ -62,6 +62,9 @@ export const normalizeSongState = (song: SongState): SongState => ({
       (song as SongState & { masterSafety?: { enabled?: boolean } }).masterSafety?.enabled === true,
     amount: clamp01((song as SongState & { masterSafety?: { amount?: number } }).masterSafety?.amount, 0.08),
   },
+  performance: {
+    ecoMode: (song as SongState & { performance?: { ecoMode?: boolean } }).performance?.ecoMode === true,
+  },
   tracks: song.tracks.map((track) => ({
     ...track,
     instrument: normalizeInstrumentParams(track.type, track.instrument),

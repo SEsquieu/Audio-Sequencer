@@ -1,4 +1,4 @@
-import { createFxModule, FxModuleHandle } from "./modules";
+import { createFxModule, FxModuleHandle, FxRenderOptions } from "./modules";
 import { FxInstance } from "./types";
 import { CrossfadeRouter, makeCrossfade } from "./util";
 
@@ -11,8 +11,8 @@ interface LaneState {
 const STRUCTURAL_FADE_MS = 28;
 const DISPOSE_DELAY_MS = 72;
 
-const toStructuralSignature = (instances: FxInstance[]): string =>
-  instances.map((fx) => `${fx.id}:${fx.type}:${fx.enabled ? 1 : 0}`).join("|");
+const toStructuralSignature = (instances: FxInstance[], options: FxRenderOptions): string =>
+  `${options.ecoMode ? "eco1" : "eco0"}|${instances.map((fx) => `${fx.id}:${fx.type}:${fx.enabled ? 1 : 0}`).join("|")}`;
 
 const normalizeInstances = (instances: FxInstance[]): FxInstance[] =>
   instances.map((fx) => ({
@@ -28,6 +28,8 @@ export class FxRack {
   private activeLaneIndex: 0 | 1 = 0;
   private readonly lanes: [LaneState, LaneState];
   private laneTokens: [number, number] = [0, 0];
+  private renderOptions: FxRenderOptions = { ecoMode: false };
+  private lastInstances: FxInstance[] = [];
 
   constructor(private readonly context: AudioContext) {
     this.crossfade = makeCrossfade(context, 0);
@@ -44,7 +46,8 @@ export class FxRack {
 
   setFxInstances(nextInstances: FxInstance[]): void {
     const normalized = normalizeInstances(nextInstances);
-    const structuralSignature = toStructuralSignature(normalized);
+    this.lastInstances = normalized;
+    const structuralSignature = toStructuralSignature(normalized, this.renderOptions);
     const activeLane = this.lanes[this.activeLaneIndex];
 
     if (activeLane.signature === structuralSignature) {
@@ -66,6 +69,14 @@ export class FxRack {
       }
       this.disposeLane(prevLaneIndex);
     }, DISPOSE_DELAY_MS);
+  }
+
+  setRenderOptions(nextOptions: FxRenderOptions): void {
+    if (this.renderOptions.ecoMode === nextOptions.ecoMode) {
+      return;
+    }
+    this.renderOptions = { ...nextOptions };
+    this.setFxInstances(this.lastInstances);
   }
 
   dispose(): void {
@@ -97,7 +108,7 @@ export class FxRack {
     this.crossfade.laneInputs[laneIndex].disconnect();
     let cursor: AudioNode = this.crossfade.laneInputs[laneIndex];
     for (const fx of enabledInstances) {
-      const module = createFxModule(this.context, fx);
+      const module = createFxModule(this.context, fx, this.renderOptions);
       cursor.connect(module.input);
       cursor = module.output;
       modules.push(module);
@@ -107,7 +118,7 @@ export class FxRack {
 
     lane.modules = modules;
     lane.byFxId = byFxId;
-    lane.signature = toStructuralSignature(instances);
+    lane.signature = toStructuralSignature(instances, this.renderOptions);
   }
 
   private disposeLane(laneIndex: 0 | 1): void {

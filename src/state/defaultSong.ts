@@ -26,8 +26,11 @@ const createDefaultSendFx = () => ({
   },
 });
 const createDefaultMasterSafety = () => ({
-  enabled: false,
-  amount: 0.08,
+  enabled: true,
+  amount: 0.03,
+});
+const createDefaultPerformance = () => ({
+  ecoMode: false,
 });
 
 export const createDefaultSong = (): SongState => ({
@@ -37,6 +40,7 @@ export const createDefaultSong = (): SongState => ({
   masterFx: [],
   sendFx: createDefaultSendFx(),
   masterSafety: createDefaultMasterSafety(),
+  performance: createDefaultPerformance(),
   tracks: [
     {
       id: "t-lead",

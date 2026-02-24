@@ -3619,6 +3619,16 @@ function App() {
                     </div>
                     <div className="osc-controls" style={{ marginTop: "0.4rem" }}>
                       <label className="waveform-row">
+                        <span>Eco Mode</span>
+                        <input
+                          type="checkbox"
+                          checked={song.performance.ecoMode}
+                          onChange={(e) =>
+                            applySingleReplace("/performance/ecoMode", e.target.checked, "Toggle Eco Mode")
+                          }
+                        />
+                      </label>
+                      <label className="waveform-row">
                         <span>Master Safety</span>
                         <input
                           type="checkbox"
