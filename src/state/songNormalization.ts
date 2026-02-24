@@ -1,4 +1,4 @@
-import { SongState } from "../types/song";
+import { DelayBusTargetId, ReverbBusTargetId, SongState } from "../types/song";
 import { normalizeInstrumentParams } from "./instrumentDefaults";
 import { FxInstance, FxType, defaultFxParams } from "../audio/fx/types";
 
@@ -6,6 +6,10 @@ const isFxType = (value: unknown): value is FxType =>
   value === "saturator" || value === "eq3" || value === "chorus" || value === "djFilter";
 const clamp01 = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
+const isDelayBusTargetId = (value: unknown): value is DelayBusTargetId =>
+  value === "custom" || value === "echoA" || value === "echoB";
+const isReverbBusTargetId = (value: unknown): value is ReverbBusTargetId =>
+  value === "custom" || value === "roomA" || value === "hallB";
 
 const normalizeFxInstances = (value: unknown): FxInstance[] => {
   if (!Array.isArray(value)) {
@@ -95,6 +99,12 @@ export const normalizeSongState = (song: SongState): SongState => ({
               Math.min(1, (track as typeof track & { send?: { reverbLowCut?: number } }).send!.reverbLowCut!)
             )
           : 0.24,
+      delayBus: isDelayBusTargetId((track as typeof track & { send?: { delayBus?: unknown } }).send?.delayBus)
+        ? ((track as typeof track & { send?: { delayBus?: DelayBusTargetId } }).send!.delayBus as DelayBusTargetId)
+        : "custom",
+      reverbBus: isReverbBusTargetId((track as typeof track & { send?: { reverbBus?: unknown } }).send?.reverbBus)
+        ? ((track as typeof track & { send?: { reverbBus?: ReverbBusTargetId } }).send!.reverbBus as ReverbBusTargetId)
+        : "custom",
     },
     insertFx: normalizeFxInstances((track as typeof track & { insertFx?: unknown }).insertFx),
   })),

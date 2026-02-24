@@ -1,10 +1,11 @@
-import { InstrumentParams, TrackType } from "../types/song";
+import { InstrumentParams, Track } from "../types/song";
 
 export interface InstrumentPreset {
   id: string;
   label: string;
-  type: TrackType;
+  type: Track["type"];
   params: InstrumentParams;
+  send?: Partial<Track["send"]>;
 }
 
 type NumericInstrumentField = Exclude<keyof InstrumentParams, "oscWaveformA" | "oscWaveformB">;
@@ -30,6 +31,15 @@ const numericInstrumentFields: NumericInstrumentField[] = [
 ];
 
 const nearlyEqual = (a: number, b: number) => Math.abs(a - b) < 0.000001;
+const DEFAULT_PRESET_SEND: Track["send"] = {
+  delay: 0,
+  reverb: 0,
+  delayTone: 0.72,
+  reverbTone: 0.62,
+  reverbLowCut: 0.24,
+  delayBus: "custom",
+  reverbBus: "custom",
+};
 
 export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
   {
@@ -82,6 +92,15 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       noiseMix: 0,
       stereoWidth: 0.25,
       filterEnvAmount: 0,
+    },
+    send: {
+      delay: 0.18,
+      reverb: 0.52,
+      delayTone: 0.58,
+      reverbTone: 0.54,
+      reverbLowCut: 0.34,
+      delayBus: "echoA",
+      reverbBus: "hallB",
     },
   },
   {
@@ -186,6 +205,120 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
       noiseMix: 0,
       stereoWidth: 0.25,
       filterEnvAmount: 0,
+    },
+    send: {
+      delay: 0.24,
+      reverb: 0.34,
+      delayTone: 0.78,
+      reverbTone: 0.66,
+      reverbLowCut: 0.28,
+      delayBus: "echoB",
+      reverbBus: "hallB",
+    },
+  },
+  {
+    id: "synth-space-pluck",
+    label: "Space Pluck",
+    type: "synth",
+    params: {
+      attack: 0.001,
+      decay: 0.14,
+      sustain: 0.12,
+      release: 0.16,
+      cutoff: 4800,
+      resonance: 2.7,
+      gain: 0.46,
+      lofiAmount: 0.02,
+      detune: 9,
+      drive: 0.14,
+      vibratoRate: 4.8,
+      vibratoDepth: 2.2,
+      oscWaveformA: "triangle",
+      oscWaveformB: "sawtooth",
+      oscMix: 0.42,
+      subOscMix: 0.04,
+      noiseMix: 0.01,
+      stereoWidth: 0.34,
+      filterEnvAmount: 0.22,
+    },
+    send: {
+      delay: 0.42,
+      reverb: 0.24,
+      delayTone: 0.82,
+      reverbTone: 0.7,
+      reverbLowCut: 0.36,
+      delayBus: "echoB",
+      reverbBus: "roomA",
+    },
+  },
+  {
+    id: "synth-dub-bass",
+    label: "Dub Bass",
+    type: "synth",
+    params: {
+      attack: 0.01,
+      decay: 0.24,
+      sustain: 0.48,
+      release: 0.24,
+      cutoff: 1100,
+      resonance: 1.7,
+      gain: 0.54,
+      lofiAmount: 0.06,
+      detune: 2.5,
+      drive: 0.22,
+      vibratoRate: 1.3,
+      vibratoDepth: 1.2,
+      oscWaveformA: "square",
+      oscWaveformB: "triangle",
+      oscMix: 0.28,
+      subOscMix: 0.22,
+      noiseMix: 0,
+      stereoWidth: 0.12,
+      filterEnvAmount: 0.12,
+    },
+    send: {
+      delay: 0.3,
+      reverb: 0.12,
+      delayTone: 0.4,
+      reverbTone: 0.38,
+      reverbLowCut: 0.62,
+      delayBus: "echoA",
+      reverbBus: "roomA",
+    },
+  },
+  {
+    id: "synth-cinema-lead",
+    label: "Cinema Lead",
+    type: "synth",
+    params: {
+      attack: 0.012,
+      decay: 0.2,
+      sustain: 0.44,
+      release: 0.3,
+      cutoff: 3000,
+      resonance: 1.1,
+      gain: 0.46,
+      lofiAmount: 0,
+      detune: 11,
+      drive: 0.18,
+      vibratoRate: 4.1,
+      vibratoDepth: 5.6,
+      oscWaveformA: "sawtooth",
+      oscWaveformB: "triangle",
+      oscMix: 0.56,
+      subOscMix: 0.04,
+      noiseMix: 0.01,
+      stereoWidth: 0.32,
+      filterEnvAmount: 0.1,
+    },
+    send: {
+      delay: 0.22,
+      reverb: 0.46,
+      delayTone: 0.74,
+      reverbTone: 0.68,
+      reverbLowCut: 0.32,
+      delayBus: "echoB",
+      reverbBus: "hallB",
     },
   },
   {
@@ -424,14 +557,27 @@ export const INSTRUMENT_PRESETS: InstrumentPreset[] = [
   },
 ];
 
-export const getPresetsForType = (type: TrackType): InstrumentPreset[] =>
+export const getPresetsForType = (type: Track["type"]): InstrumentPreset[] =>
   INSTRUMENT_PRESETS.filter((preset) => preset.type === type);
 
-export const getMatchingPresetId = (type: TrackType, params: InstrumentParams): string | null => {
+export const getMatchingPresetId = (type: Track["type"], params: InstrumentParams, send?: Track["send"]): string | null => {
   const match = getPresetsForType(type).find((preset) =>
     preset.params.oscWaveformA === params.oscWaveformA &&
     preset.params.oscWaveformB === params.oscWaveformB &&
-    numericInstrumentFields.every((field) => nearlyEqual(preset.params[field], params[field]))
+    numericInstrumentFields.every((field) => nearlyEqual(preset.params[field], params[field])) &&
+    (!send ||
+      (() => {
+        const presetSend = { ...DEFAULT_PRESET_SEND, ...preset.send };
+        return (
+          nearlyEqual(presetSend.delay, send.delay) &&
+          nearlyEqual(presetSend.reverb, send.reverb) &&
+          nearlyEqual(presetSend.delayTone, send.delayTone) &&
+          nearlyEqual(presetSend.reverbTone, send.reverbTone) &&
+          nearlyEqual(presetSend.reverbLowCut, send.reverbLowCut) &&
+          presetSend.delayBus === send.delayBus &&
+          presetSend.reverbBus === send.reverbBus
+        );
+      })())
   );
   return match?.id ?? null;
 };

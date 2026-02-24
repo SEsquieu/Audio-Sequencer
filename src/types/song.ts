@@ -2,6 +2,8 @@ import type { FxInstance } from "../audio/fx/types";
 
 export type TrackType = "synth" | "drums";
 export type WaveformType = "sine" | "triangle" | "sawtooth" | "square";
+export type DelayBusTargetId = "custom" | "echoA" | "echoB";
+export type ReverbBusTargetId = "custom" | "roomA" | "hallB";
 
 export interface InstrumentParams {
   attack: number;
@@ -62,6 +64,8 @@ export interface Track {
     delayTone: number;
     reverbTone: number;
     reverbLowCut: number;
+    delayBus: DelayBusTargetId;
+    reverbBus: ReverbBusTargetId;
   };
   insertFx: FxInstance[];
 }

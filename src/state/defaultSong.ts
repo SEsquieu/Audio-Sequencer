@@ -9,6 +9,8 @@ const createDefaultTrackSend = () => ({
   delayTone: 0.72,
   reverbTone: 0.62,
   reverbLowCut: 0.24,
+  delayBus: "custom" as const,
+  reverbBus: "custom" as const,
 });
 const createDefaultSendFx = () => ({
   delay: {

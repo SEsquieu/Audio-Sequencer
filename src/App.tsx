@@ -22,9 +22,11 @@ import { getMatchingPresetId, getPresetsForType } from "./state/instrumentPreset
 import { useSong } from "./state/songContext";
 import {
   DelayDivision,
+  DelayBusTargetId,
   JsonPatchOp,
   PatchMeta,
   Pattern,
+  ReverbBusTargetId,
   SongState,
   SynthStep,
   Track,
@@ -63,6 +65,16 @@ const FX_TYPE_LABEL: Record<FxType, string> = {
   djFilter: "DJ Filter",
 };
 const DELAY_DIVISIONS: DelayDivision[] = ["1/4", "1/8", "1/8d", "1/16"];
+const DELAY_BUS_OPTIONS: Array<{ id: DelayBusTargetId; label: string }> = [
+  { id: "custom", label: "Custom" },
+  { id: "echoA", label: "Echo A" },
+  { id: "echoB", label: "Echo B" },
+];
+const REVERB_BUS_OPTIONS: Array<{ id: ReverbBusTargetId; label: string }> = [
+  { id: "custom", label: "Custom" },
+  { id: "roomA", label: "Room A" },
+  { id: "hallB", label: "Hall B" },
+];
 const deepClone = <T,>(value: T): T => {
   if (typeof structuredClone === "function") {
     return structuredClone(value);
@@ -649,7 +661,7 @@ function App() {
   const addBarsTailLeftPx = timelineGridOffsetPx + timelineContentWidthPx - timelineScrollLeft + rootRemPx * 0.14;
   const availablePresets = useMemo(() => (track ? getPresetsForType(track.type) : []), [track]);
   const selectedPresetId = useMemo(
-    () => (track ? getMatchingPresetId(track.type, track.instrument) : null),
+    () => (track ? getMatchingPresetId(track.type, track.instrument, track.send) : null),
     [track]
   );
   const buildPitchRows = useCallback((base: number) => {
@@ -1405,6 +1417,18 @@ function App() {
         path: `/tracks/${safeTrackIndex}/instrument`,
         value: { ...preset.params },
       },
+      ...(preset.send
+        ? ([
+            {
+              op: "replace",
+              path: `/tracks/${safeTrackIndex}/send`,
+              value: {
+                ...track.send,
+                ...preset.send,
+              },
+            },
+          ] as JsonPatchOp[])
+        : []),
     ]);
   };
 
@@ -1477,7 +1501,15 @@ function App() {
               },
             },
             lane,
-            send: { delay: 0, reverb: 0, delayTone: 0.72, reverbTone: 0.62, reverbLowCut: 0.24 },
+            send: {
+              delay: 0,
+              reverb: 0,
+              delayTone: 0.72,
+              reverbTone: 0.62,
+              reverbLowCut: 0.24,
+              delayBus: "custom",
+              reverbBus: "custom",
+            },
             insertFx: [],
           }
         : {
@@ -1492,7 +1524,15 @@ function App() {
               },
             },
             lane,
-            send: { delay: 0, reverb: 0, delayTone: 0.72, reverbTone: 0.62, reverbLowCut: 0.24 },
+            send: {
+              delay: 0,
+              reverb: 0,
+              delayTone: 0.72,
+              reverbTone: 0.62,
+              reverbLowCut: 0.24,
+              delayBus: "custom",
+              reverbBus: "custom",
+            },
             insertFx: [],
           };
 
@@ -3353,6 +3393,44 @@ function App() {
                           }
                         />
                         <span>{track.send.reverb.toFixed(2)}</span>
+                      </label>
+                      <label className="waveform-row">
+                        <span>Delay Bus</span>
+                        <select
+                          value={track.send.delayBus}
+                          onChange={(e) =>
+                            applySingleReplace(
+                              `/tracks/${safeTrackIndex}/send/delayBus`,
+                              e.target.value as DelayBusTargetId,
+                              `Route ${track.name} Delay Bus`
+                            )
+                          }
+                        >
+                          {DELAY_BUS_OPTIONS.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="waveform-row">
+                        <span>Reverb Bus</span>
+                        <select
+                          value={track.send.reverbBus}
+                          onChange={(e) =>
+                            applySingleReplace(
+                              `/tracks/${safeTrackIndex}/send/reverbBus`,
+                              e.target.value as ReverbBusTargetId,
+                              `Route ${track.name} Reverb Bus`
+                            )
+                          }
+                        >
+                          {REVERB_BUS_OPTIONS.map((option) => (
+                            <option key={option.id} value={option.id}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
                       </label>
                       <label>
                         <span>Delay Tone</span>

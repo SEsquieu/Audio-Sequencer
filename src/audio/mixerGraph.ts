@@ -1,4 +1,4 @@
-import { SongState, DelayDivision } from "../types/song";
+import { SongState, DelayBusTargetId, DelayDivision, ReverbBusTargetId } from "../types/song";
 import { FxRack } from "./fx/FxRack";
 import { FxInstance } from "./fx/types";
 
@@ -8,6 +8,8 @@ interface TrackSendValues {
   delayTone: number;
   reverbTone: number;
   reverbLowCut: number;
+  delayBus: DelayBusTargetId;
+  reverbBus: ReverbBusTargetId;
 }
 
 interface TrackBusEntry {
@@ -18,9 +20,11 @@ interface TrackBusEntry {
   sendTap: GainNode;
   sendDelayGain: GainNode;
   sendDelayTone: BiquadFilterNode;
+  delayBusSelectors: Record<DelayBusTargetId, GainNode>;
   sendReverbGain: GainNode;
   sendReverbLowCut: BiquadFilterNode;
   sendReverbTone: BiquadFilterNode;
+  reverbBusSelectors: Record<ReverbBusTargetId, GainNode>;
   insertRack: FxRack;
   type: "synth" | "drums";
   baseTrim: number;
@@ -73,6 +77,8 @@ export class MixerGraph {
   private masterGain: GainNode | null = null;
   private delayBus: DelayBus | null = null;
   private reverbBus: ReverbBus | null = null;
+  private delayPresetBuses: Partial<Record<Exclude<DelayBusTargetId, "custom">, DelayBus>> = {};
+  private reverbPresetBuses: Partial<Record<Exclude<ReverbBusTargetId, "custom">, ReverbBus>> = {};
   private trackBuses = new Map<string, TrackBusEntry>();
   private trackTypeById = new Map<string, "synth" | "drums">();
   private trackSendById = new Map<string, TrackSendValues>();
@@ -130,6 +136,52 @@ export class MixerGraph {
 
   private applyTrackAudibilityState(entry: TrackBusEntry, when: number): void {
     this.rampParam(entry.postGain.gain, entry.isMuted ? 0 : entry.baseTrim, when, 0.015);
+  }
+
+  private getAllDelayBuses(): Partial<Record<DelayBusTargetId, DelayBus>> {
+    return {
+      custom: this.delayBus ?? undefined,
+      ...this.delayPresetBuses,
+    };
+  }
+
+  private getAllReverbBuses(): Partial<Record<ReverbBusTargetId, ReverbBus>> {
+    return {
+      custom: this.reverbBus ?? undefined,
+      ...this.reverbPresetBuses,
+    };
+  }
+
+  private applyPresetDelayBusProfile(id: Exclude<DelayBusTargetId, "custom">, bus: DelayBus, context: AudioContext): void {
+    if (id === "echoA") {
+      bus.delay.delayTime.setValueAtTime(0.375, context.currentTime);
+      bus.feedbackGain.gain.setValueAtTime(0.34, context.currentTime);
+      bus.feedbackTone.frequency.setValueAtTime(5400, context.currentTime);
+      bus.inputFilter.frequency.setValueAtTime(6800, context.currentTime);
+      bus.wet.gain.setValueAtTime(0.26, context.currentTime);
+      return;
+    }
+    bus.delay.delayTime.setValueAtTime(0.22, context.currentTime);
+    bus.feedbackGain.gain.setValueAtTime(0.46, context.currentTime);
+    bus.feedbackTone.frequency.setValueAtTime(8400, context.currentTime);
+    bus.inputFilter.frequency.setValueAtTime(11000, context.currentTime);
+    bus.wet.gain.setValueAtTime(0.34, context.currentTime);
+  }
+
+  private applyPresetReverbBusProfile(id: Exclude<ReverbBusTargetId, "custom">, bus: ReverbBus, context: AudioContext): void {
+    if (id === "roomA") {
+      bus.preDelay.delayTime.setValueAtTime(0.01, context.currentTime);
+      bus.tone.frequency.setValueAtTime(4200, context.currentTime);
+      bus.wet.gain.setValueAtTime(0.2, context.currentTime);
+      bus.convA.buffer = this.createImpulseResponse(context, 0.95, 2.2);
+      bus.lastIrKey = "preset-roomA";
+      return;
+    }
+    bus.preDelay.delayTime.setValueAtTime(0.028, context.currentTime);
+    bus.tone.frequency.setValueAtTime(6200, context.currentTime);
+    bus.wet.gain.setValueAtTime(0.32, context.currentTime);
+    bus.convA.buffer = this.createImpulseResponse(context, 2.6, 3.4);
+    bus.lastIrKey = "preset-hallB";
   }
 
   private mapDelayDivisionToSeconds(tempo: number, division: DelayDivision): number {
@@ -203,6 +255,18 @@ export class MixerGraph {
     this.reverbBus = this.createReverbBus(context);
     this.delayBus.returnGain.connect(this.masterIn);
     this.reverbBus.returnGain.connect(this.masterIn);
+    this.delayPresetBuses.echoA = this.createDelayBus(context);
+    this.delayPresetBuses.echoB = this.createDelayBus(context);
+    this.reverbPresetBuses.roomA = this.createReverbBus(context);
+    this.reverbPresetBuses.hallB = this.createReverbBus(context);
+    this.delayPresetBuses.echoA.returnGain.connect(this.masterIn);
+    this.delayPresetBuses.echoB.returnGain.connect(this.masterIn);
+    this.reverbPresetBuses.roomA.returnGain.connect(this.masterIn);
+    this.reverbPresetBuses.hallB.returnGain.connect(this.masterIn);
+    this.applyPresetDelayBusProfile("echoA", this.delayPresetBuses.echoA, context);
+    this.applyPresetDelayBusProfile("echoB", this.delayPresetBuses.echoB, context);
+    this.applyPresetReverbBusProfile("roomA", this.reverbPresetBuses.roomA, context);
+    this.applyPresetReverbBusProfile("hallB", this.reverbPresetBuses.hallB, context);
 
     this.setMasterSafety({ enabled: this.masterSafetyEnabled, amount: this.masterSafetyAmount }, context);
     this.masterInsertRack.setRenderOptions({ ecoMode: this.ecoMode });
@@ -319,9 +383,19 @@ export class MixerGraph {
     const sendTap = context.createGain();
     const sendDelayGain = context.createGain();
     const sendDelayTone = context.createBiquadFilter();
+    const delayBusSelectors: Record<DelayBusTargetId, GainNode> = {
+      custom: context.createGain(),
+      echoA: context.createGain(),
+      echoB: context.createGain(),
+    };
     const sendReverbGain = context.createGain();
     const sendReverbLowCut = context.createBiquadFilter();
     const sendReverbTone = context.createBiquadFilter();
+    const reverbBusSelectors: Record<ReverbBusTargetId, GainNode> = {
+      custom: context.createGain(),
+      roomA: context.createGain(),
+      hallB: context.createGain(),
+    };
     const insertRack = new FxRack(context);
 
     input.gain.setValueAtTime(1, context.currentTime);
@@ -331,6 +405,8 @@ export class MixerGraph {
     sendTap.gain.setValueAtTime(1, context.currentTime);
     sendDelayGain.gain.setValueAtTime(0, context.currentTime);
     sendReverbGain.gain.setValueAtTime(0, context.currentTime);
+    Object.values(delayBusSelectors).forEach((node) => node.gain.setValueAtTime(0, context.currentTime));
+    Object.values(reverbBusSelectors).forEach((node) => node.gain.setValueAtTime(0, context.currentTime));
     sendDelayTone.type = "lowpass";
     sendDelayTone.frequency.setValueAtTime(this.mapTrackDelaySendToneHz(0.72), context.currentTime);
     sendReverbLowCut.type = "highpass";
@@ -345,13 +421,29 @@ export class MixerGraph {
     if (this.delayBus) {
       sendTap.connect(sendDelayGain);
       sendDelayGain.connect(sendDelayTone);
-      sendDelayTone.connect(this.delayBus.in);
+      const delayBuses = this.getAllDelayBuses();
+      (Object.keys(delayBusSelectors) as DelayBusTargetId[]).forEach((id) => {
+        const selector = delayBusSelectors[id];
+        sendDelayTone.connect(selector);
+        const targetBus = delayBuses[id];
+        if (targetBus) {
+          selector.connect(targetBus.in);
+        }
+      });
     }
     if (this.reverbBus) {
       sendTap.connect(sendReverbGain);
       sendReverbGain.connect(sendReverbLowCut);
       sendReverbLowCut.connect(sendReverbTone);
-      sendReverbTone.connect(this.reverbBus.in);
+      const reverbBuses = this.getAllReverbBuses();
+      (Object.keys(reverbBusSelectors) as ReverbBusTargetId[]).forEach((id) => {
+        const selector = reverbBusSelectors[id];
+        sendReverbTone.connect(selector);
+        const targetBus = reverbBuses[id];
+        if (targetBus) {
+          selector.connect(targetBus.in);
+        }
+      });
     }
 
     const entry: TrackBusEntry = {
@@ -362,9 +454,11 @@ export class MixerGraph {
       sendTap,
       sendDelayGain,
       sendDelayTone,
+      delayBusSelectors,
       sendReverbGain,
       sendReverbLowCut,
       sendReverbTone,
+      reverbBusSelectors,
       insertRack,
       type: "synth",
       baseTrim: this.getTrackBaseTrim("synth"),
@@ -377,9 +471,11 @@ export class MixerGraph {
         sendTap,
         sendDelayGain,
         sendDelayTone,
+        ...Object.values(delayBusSelectors),
         sendReverbGain,
         sendReverbLowCut,
         sendReverbTone,
+        ...Object.values(reverbBusSelectors),
       ],
       disconnect: () => {
         entry.insertRack.dispose();
@@ -437,6 +533,8 @@ export class MixerGraph {
       delayTone: 0.72,
       reverbTone: 0.62,
       reverbLowCut: 0.24,
+      delayBus: "custom",
+      reverbBus: "custom",
     };
     const when = context.currentTime;
     this.rampParam(entry.sendDelayGain.gain, this.mapSendGain(values.delay, "delay"), when);
@@ -444,6 +542,12 @@ export class MixerGraph {
     this.rampParam(entry.sendDelayTone.frequency, this.mapTrackDelaySendToneHz(values.delayTone), when, 0.02);
     this.rampParam(entry.sendReverbTone.frequency, this.mapTrackReverbSendToneHz(values.reverbTone), when, 0.02);
     this.rampParam(entry.sendReverbLowCut.frequency, this.mapTrackReverbLowCutHz(values.reverbLowCut), when, 0.02);
+    (Object.keys(entry.delayBusSelectors) as DelayBusTargetId[]).forEach((id) => {
+      this.rampParam(entry.delayBusSelectors[id].gain, values.delayBus === id ? 1 : 0, when, 0.01);
+    });
+    (Object.keys(entry.reverbBusSelectors) as ReverbBusTargetId[]).forEach((id) => {
+      this.rampParam(entry.reverbBusSelectors[id].gain, values.reverbBus === id ? 1 : 0, when, 0.01);
+    });
   }
 
   private applyTrackInsertFxState(trackId: string, entry: TrackBusEntry): void {
@@ -588,6 +692,8 @@ export class MixerGraph {
           delayTone: maybeSend.delayTone ?? 0.72,
           reverbTone: maybeSend.reverbTone ?? 0.62,
           reverbLowCut: maybeSend.reverbLowCut ?? 0.24,
+          delayBus: (maybeSend.delayBus as DelayBusTargetId | undefined) ?? "custom",
+          reverbBus: (maybeSend.reverbBus as ReverbBusTargetId | undefined) ?? "custom",
         });
       }
       const insertFx = (track as typeof track & { insertFx?: FxInstance[] }).insertFx ?? [];
@@ -634,6 +740,8 @@ export class MixerGraph {
       delayTone: 0.72,
       reverbTone: 0.62,
       reverbLowCut: 0.24,
+      delayBus: "custom",
+      reverbBus: "custom",
     };
     const next: TrackSendValues = {
       delay: this.clamp01(values.delay ?? previous.delay),
@@ -641,6 +749,8 @@ export class MixerGraph {
       delayTone: this.clamp01(values.delayTone ?? previous.delayTone),
       reverbTone: this.clamp01(values.reverbTone ?? previous.reverbTone),
       reverbLowCut: this.clamp01(values.reverbLowCut ?? previous.reverbLowCut),
+      delayBus: (values.delayBus ?? previous.delayBus) as DelayBusTargetId,
+      reverbBus: (values.reverbBus ?? previous.reverbBus) as ReverbBusTargetId,
     };
     this.trackSendById.set(trackId, next);
 
@@ -654,6 +764,12 @@ export class MixerGraph {
     this.rampParam(bus.sendDelayTone.frequency, this.mapTrackDelaySendToneHz(next.delayTone), when, 0.02);
     this.rampParam(bus.sendReverbTone.frequency, this.mapTrackReverbSendToneHz(next.reverbTone), when, 0.02);
     this.rampParam(bus.sendReverbLowCut.frequency, this.mapTrackReverbLowCutHz(next.reverbLowCut), when, 0.02);
+    (Object.keys(bus.delayBusSelectors) as DelayBusTargetId[]).forEach((id) => {
+      this.rampParam(bus.delayBusSelectors[id].gain, next.delayBus === id ? 1 : 0, when, 0.01);
+    });
+    (Object.keys(bus.reverbBusSelectors) as ReverbBusTargetId[]).forEach((id) => {
+      this.rampParam(bus.reverbBusSelectors[id].gain, next.reverbBus === id ? 1 : 0, when, 0.01);
+    });
   }
 
   setMasterSafety(
