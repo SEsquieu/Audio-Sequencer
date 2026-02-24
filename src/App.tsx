@@ -13,14 +13,24 @@ import {
 } from "react";
 import { aiProposePatch } from "./ai/aiProposePatch";
 import { AudioEngine, getEffectiveLoopBars } from "./audio/engine";
-import { FxType, createFxInstance } from "./audio/fx/types";
+import { FxType, createFxInstance, FxInstance } from "./audio/fx/types";
 import { AdsrEnvelopeEditor } from "./components/AdsrEnvelopeEditor";
 import { FilterEqPad } from "./components/FilterEqPad";
 import { SynthModPads } from "./components/SynthModPads";
 import { buildDefaultInstrument } from "./state/instrumentDefaults";
 import { getMatchingPresetId, getPresetsForType } from "./state/instrumentPresets";
 import { useSong } from "./state/songContext";
-import { JsonPatchOp, PatchMeta, Pattern, SongState, SynthStep, Track, TrackType, WaveformType } from "./types/song";
+import {
+  DelayDivision,
+  JsonPatchOp,
+  PatchMeta,
+  Pattern,
+  SongState,
+  SynthStep,
+  Track,
+  TrackType,
+  WaveformType,
+} from "./types/song";
 
 const MIN_OCTAVE_BASE = 24;
 const MAX_OCTAVE_BASE = 96;
@@ -50,6 +60,7 @@ const FX_TYPE_LABEL: Record<FxType, string> = {
   saturator: "Saturator",
   eq3: "EQ3",
 };
+const DELAY_DIVISIONS: DelayDivision[] = ["1/4", "1/8", "1/8d", "1/16"];
 const deepClone = <T,>(value: T): T => {
   if (typeof structuredClone === "function") {
     return structuredClone(value);
@@ -463,6 +474,7 @@ function App() {
 
   useEffect(() => {
     songRef.current = song;
+    engineRef.current?.syncSongState(song);
   }, [song]);
 
   useEffect(() => {
@@ -476,6 +488,7 @@ function App() {
       const engine = new AudioEngine();
       engine.onTick(onEngineTick);
       engine.setMasterVolume(masterVolume);
+      engine.syncSongState(songRef.current);
       engineRef.current = engine;
     }
   }, [masterVolume, onEngineTick]);
@@ -487,8 +500,10 @@ function App() {
       engine.onTick(onEngineTick);
       engine.setMasterVolume(masterVolume);
       engine.setMutedTrackIds(mutedTrackIds);
+      engine.syncSongState(songRef.current);
       engineRef.current = engine;
     }
+    engine.syncSongState(songRef.current);
     return engine;
   }, [masterVolume, mutedTrackIds, onEngineTick]);
 
@@ -1593,6 +1608,86 @@ function App() {
       { op: "replace", path: `${path}/${index}`, value: targetValue },
       { op: "replace", path: `${path}/${targetIndex}`, value: currentValue },
     ]);
+  };
+
+  const updateFxParams = (path: string, fx: FxInstance, partial: Record<string, number>, label: string) => {
+    applySingleReplace(path, { ...fx.params, ...partial }, label);
+  };
+
+  const renderFxParamEditor = (fx: FxInstance, paramsPath: string) => {
+    if (fx.type === "saturator") {
+      const params = fx.params as FxInstance<"saturator">["params"];
+      return (
+        <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
+          <label>
+            <span>Drive</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={params.drive}
+              onChange={(e) =>
+                updateFxParams(paramsPath, fx, { drive: Number(e.target.value) }, "Adjust Saturator Drive")
+              }
+            />
+            <span>{params.drive.toFixed(2)}</span>
+          </label>
+          <label>
+            <span>Mix</span>
+            <input
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={params.mix}
+              onChange={(e) => updateFxParams(paramsPath, fx, { mix: Number(e.target.value) }, "Adjust Saturator Mix")}
+            />
+            <span>{params.mix.toFixed(2)}</span>
+          </label>
+          <label>
+            <span>Output</span>
+            <input
+              type="range"
+              min={0}
+              max={1.4}
+              step={0.01}
+              value={params.output}
+              onChange={(e) =>
+                updateFxParams(paramsPath, fx, { output: Number(e.target.value) }, "Adjust Saturator Output")
+              }
+            />
+            <span>{params.output.toFixed(2)}</span>
+          </label>
+        </div>
+      );
+    }
+
+    const params = fx.params as FxInstance<"eq3">["params"];
+    return (
+      <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
+        {(
+          [
+            ["low", -18, 18, 0.5, "Low"],
+            ["mid", -18, 18, 0.5, "Mid"],
+            ["high", -18, 18, 0.5, "High"],
+          ] as const
+        ).map(([key, min, max, step, label]) => (
+          <label key={key}>
+            <span>{label}</span>
+            <input
+              type="range"
+              min={min}
+              max={max}
+              step={step}
+              value={params[key]}
+              onChange={(e) => updateFxParams(paramsPath, fx, { [key]: Number(e.target.value) }, `Adjust EQ3 ${label}`)}
+            />
+            <span>{params[key].toFixed(1)} dB</span>
+          </label>
+        ))}
+      </div>
+    );
   };
 
   const onSaveSongToFile = useCallback(() => {
@@ -3176,43 +3271,48 @@ function App() {
                     <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.45rem" }}>
                       {track.insertFx.length === 0 && <span style={{ opacity: 0.7 }}>No track insert FX</span>}
                       {track.insertFx.map((fx, index) => (
-                        <div
-                          key={fx.id}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr auto auto auto auto",
-                            alignItems: "center",
-                            gap: "0.35rem",
-                          }}
-                        >
-                          <span>
-                            {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              toggleFxEnabled(`/tracks/${safeTrackIndex}/insertFx/${index}/enabled`, fx.enabled)
-                            }
+                        <div key={fx.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: "0.5rem", padding: "0.35rem" }}>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr auto auto auto auto",
+                              alignItems: "center",
+                              gap: "0.35rem",
+                            }}
                           >
-                            {fx.enabled ? "Disable" : "Enable"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, -1, track.insertFx)}
-                            disabled={index === 0}
-                          >
-                            Up
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, 1, track.insertFx)}
-                            disabled={index === track.insertFx.length - 1}
-                          >
-                            Down
-                          </button>
-                          <button type="button" onClick={() => removeFx(`/tracks/${safeTrackIndex}/insertFx/${index}`)}>
-                            Remove
-                          </button>
+                            <span>
+                              {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleFxEnabled(`/tracks/${safeTrackIndex}/insertFx/${index}/enabled`, fx.enabled)
+                              }
+                            >
+                              {fx.enabled ? "Disable" : "Enable"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, -1, track.insertFx)}
+                              disabled={index === 0}
+                            >
+                              Up
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, 1, track.insertFx)}
+                              disabled={index === track.insertFx.length - 1}
+                            >
+                              Down
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => removeFx(`/tracks/${safeTrackIndex}/insertFx/${index}`)}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                          {renderFxParamEditor(fx, `/tracks/${safeTrackIndex}/insertFx/${index}/params`)}
                         </div>
                       ))}
                     </div>
@@ -3230,6 +3330,167 @@ function App() {
                 </button>
                 {masterFxRackOpen && (
                   <>
+                    <div className="osc-controls" style={{ marginTop: "0.2rem" }}>
+                      <label className="waveform-row">
+                        <span>Delay Time</span>
+                        <select
+                          value={song.sendFx.delay.division}
+                          onChange={(e) =>
+                            applySingleReplace(
+                              "/sendFx/delay/division",
+                              e.target.value as DelayDivision,
+                              "Adjust Delay Division"
+                            )
+                          }
+                        >
+                          {DELAY_DIVISIONS.map((division) => (
+                            <option key={division} value={division}>
+                              {division}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>Delay Feedback</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.sendFx.delay.feedback}
+                          onChange={(e) =>
+                            applySingleReplace("/sendFx/delay/feedback", Number(e.target.value), "Adjust Delay Feedback")
+                          }
+                        />
+                        <span>{song.sendFx.delay.feedback.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Delay Tone</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.sendFx.delay.tone}
+                          onChange={(e) =>
+                            applySingleReplace("/sendFx/delay/tone", Number(e.target.value), "Adjust Delay Tone")
+                          }
+                        />
+                        <span>{song.sendFx.delay.tone.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Delay Wet</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.sendFx.delay.wet}
+                          onChange={(e) =>
+                            applySingleReplace("/sendFx/delay/wet", Number(e.target.value), "Adjust Delay Wet")
+                          }
+                        />
+                        <span>{song.sendFx.delay.wet.toFixed(2)}</span>
+                      </label>
+                    </div>
+                    <div className="osc-controls" style={{ marginTop: "0.4rem" }}>
+                      <label>
+                        <span>Reverb Pre</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.sendFx.reverb.preDelay}
+                          onChange={(e) =>
+                            applySingleReplace(
+                              "/sendFx/reverb/preDelay",
+                              Number(e.target.value),
+                              "Adjust Reverb PreDelay"
+                            )
+                          }
+                        />
+                        <span>{song.sendFx.reverb.preDelay.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Reverb Decay</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.sendFx.reverb.decay}
+                          onChange={(e) =>
+                            applySingleReplace("/sendFx/reverb/decay", Number(e.target.value), "Adjust Reverb Decay")
+                          }
+                        />
+                        <span>{song.sendFx.reverb.decay.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Reverb Tone</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.sendFx.reverb.tone}
+                          onChange={(e) =>
+                            applySingleReplace("/sendFx/reverb/tone", Number(e.target.value), "Adjust Reverb Tone")
+                          }
+                        />
+                        <span>{song.sendFx.reverb.tone.toFixed(2)}</span>
+                      </label>
+                      <label>
+                        <span>Reverb Wet</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.sendFx.reverb.wet}
+                          onChange={(e) =>
+                            applySingleReplace("/sendFx/reverb/wet", Number(e.target.value), "Adjust Reverb Wet")
+                          }
+                        />
+                        <span>{song.sendFx.reverb.wet.toFixed(2)}</span>
+                      </label>
+                      <label className="waveform-row">
+                        <span>Reverb Eco</span>
+                        <input
+                          type="checkbox"
+                          checked={song.sendFx.reverb.eco}
+                          onChange={(e) =>
+                            applySingleReplace("/sendFx/reverb/eco", e.target.checked, "Toggle Reverb Eco")
+                          }
+                        />
+                      </label>
+                    </div>
+                    <div className="osc-controls" style={{ marginTop: "0.4rem" }}>
+                      <label className="waveform-row">
+                        <span>Master Safety</span>
+                        <input
+                          type="checkbox"
+                          checked={song.masterSafety.enabled}
+                          onChange={(e) =>
+                            applySingleReplace("/masterSafety/enabled", e.target.checked, "Toggle Master Safety")
+                          }
+                        />
+                      </label>
+                      <label>
+                        <span>Safety Amt</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.01}
+                          value={song.masterSafety.amount}
+                          onChange={(e) =>
+                            applySingleReplace("/masterSafety/amount", Number(e.target.value), "Adjust Master Safety")
+                          }
+                        />
+                        <span>{song.masterSafety.amount.toFixed(2)}</span>
+                      </label>
+                    </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.35rem" }}>
                       {AVAILABLE_FX_TYPES.map((fxType) => (
                         <button key={`master-add-${fxType}`} type="button" onClick={() => addMasterFx(fxType)}>
@@ -3240,41 +3501,43 @@ function App() {
                     <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.45rem" }}>
                       {song.masterFx.length === 0 && <span style={{ opacity: 0.7 }}>No master insert FX</span>}
                       {song.masterFx.map((fx, index) => (
-                        <div
-                          key={fx.id}
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "1fr auto auto auto auto",
-                            alignItems: "center",
-                            gap: "0.35rem",
-                          }}
-                        >
-                          <span>
-                            {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => toggleFxEnabled(`/masterFx/${index}/enabled`, fx.enabled)}
+                        <div key={fx.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: "0.5rem", padding: "0.35rem" }}>
+                          <div
+                            style={{
+                              display: "grid",
+                              gridTemplateColumns: "1fr auto auto auto auto",
+                              alignItems: "center",
+                              gap: "0.35rem",
+                            }}
                           >
-                            {fx.enabled ? "Disable" : "Enable"}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveFxItem("/masterFx", index, -1, song.masterFx)}
-                            disabled={index === 0}
-                          >
-                            Up
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveFxItem("/masterFx", index, 1, song.masterFx)}
-                            disabled={index === song.masterFx.length - 1}
-                          >
-                            Down
-                          </button>
-                          <button type="button" onClick={() => removeFx(`/masterFx/${index}`)}>
-                            Remove
-                          </button>
+                            <span>
+                              {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => toggleFxEnabled(`/masterFx/${index}/enabled`, fx.enabled)}
+                            >
+                              {fx.enabled ? "Disable" : "Enable"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveFxItem("/masterFx", index, -1, song.masterFx)}
+                              disabled={index === 0}
+                            >
+                              Up
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveFxItem("/masterFx", index, 1, song.masterFx)}
+                              disabled={index === song.masterFx.length - 1}
+                            >
+                              Down
+                            </button>
+                            <button type="button" onClick={() => removeFx(`/masterFx/${index}`)}>
+                              Remove
+                            </button>
+                          </div>
+                          {renderFxParamEditor(fx, `/masterFx/${index}/params`)}
                         </div>
                       ))}
                     </div>

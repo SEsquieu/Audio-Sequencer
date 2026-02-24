@@ -38,6 +38,7 @@ export class AudioEngine {
   private schedulerExpectedWakeMs = 0;
   private timerId: number | null = null;
   private getSong: (() => SongState) | null = null;
+  private latestSongState: SongState | null = null;
   private tickListener: ((info: TickInfo) => void) | null = null;
   private mutedTrackIds = new Set<string>();
   private schedulerWakeLateMaxMs = 0;
@@ -80,6 +81,9 @@ export class AudioEngine {
         this.context = new AudioContext();
         this.noiseBuffer = createNoiseBuffer(this.context);
         this.mixer.init(this.context, this.masterVolume);
+        if (this.latestSongState) {
+          this.mixer.pruneTrackBuses(this.latestSongState);
+        }
       } catch (error) {
         console.warn("[audio] Unable to create AudioContext. Running in silent mode.", error);
         this.context = null;
@@ -106,6 +110,14 @@ export class AudioEngine {
 
   setMutedTrackIds(trackIds: string[]) {
     this.mutedTrackIds = new Set(trackIds);
+  }
+
+  syncSongState(song: SongState) {
+    this.latestSongState = song;
+    if (!this.context) {
+      return;
+    }
+    this.mixer.pruneTrackBuses(song);
   }
 
   getTimingDiagnostics(): EngineTimingDiagnostics {
@@ -156,6 +168,7 @@ export class AudioEngine {
     }
 
     this.getSong = getSong;
+    this.syncSongState(getSong());
     this.isPlaying = true;
     const loopStart = this.transport.getLoopRange().start ?? 0;
     if (resetPosition) {
@@ -227,6 +240,9 @@ export class AudioEngine {
         return;
       }
     }
+    if (this.latestSongState) {
+      this.mixer.pruneTrackBuses(this.latestSongState);
+    }
     const when = this.context.currentTime + 0.005;
     try {
       this.instrumentEngine.playSynthNote(track, pitch, velocity, lengthSteps, when, tempo);
@@ -263,6 +279,9 @@ export class AudioEngine {
       } catch {
         return;
       }
+    }
+    if (this.latestSongState) {
+      this.mixer.pruneTrackBuses(this.latestSongState);
     }
 
     const when = this.context.currentTime + 0.005;

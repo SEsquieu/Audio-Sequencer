@@ -63,12 +63,41 @@ export interface Track {
   insertFx: FxInstance[];
 }
 
+export type DelayDivision = "1/4" | "1/8" | "1/8d" | "1/16";
+
+export interface DelayBusFxState {
+  division: DelayDivision;
+  feedback: number;
+  wet: number;
+  tone: number;
+}
+
+export interface ReverbBusFxState {
+  preDelay: number;
+  decay: number;
+  tone: number;
+  wet: number;
+  eco: boolean;
+}
+
+export interface SendFxState {
+  delay: DelayBusFxState;
+  reverb: ReverbBusFxState;
+}
+
+export interface MasterSafetyState {
+  enabled: boolean;
+  amount: number;
+}
+
 export interface SongState {
   tempo: number;
   swing: number;
   bars: number;
   tracks: Track[];
   masterFx: FxInstance[];
+  sendFx: SendFxState;
+  masterSafety: MasterSafetyState;
 }
 
 export type JsonPatchOp = {

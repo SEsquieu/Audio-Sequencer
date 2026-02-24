@@ -3,6 +3,8 @@ import { normalizeInstrumentParams } from "./instrumentDefaults";
 import { FxInstance, FxType, defaultFxParams } from "../audio/fx/types";
 
 const isFxType = (value: unknown): value is FxType => value === "saturator" || value === "eq3";
+const clamp01 = (value: unknown, fallback: number): number =>
+  typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : fallback;
 
 const normalizeFxInstances = (value: unknown): FxInstance[] => {
   if (!Array.isArray(value)) {
@@ -33,6 +35,32 @@ const normalizeFxInstances = (value: unknown): FxInstance[] => {
 export const normalizeSongState = (song: SongState): SongState => ({
   ...song,
   masterFx: normalizeFxInstances((song as SongState & { masterFx?: unknown }).masterFx),
+  sendFx: {
+    delay: {
+      division:
+        (song as SongState & { sendFx?: { delay?: { division?: SongState["sendFx"]["delay"]["division"] } } }).sendFx
+          ?.delay?.division ?? "1/8",
+      feedback: clamp01((song as SongState & { sendFx?: { delay?: { feedback?: number } } }).sendFx?.delay?.feedback, 0.42),
+      wet: clamp01((song as SongState & { sendFx?: { delay?: { wet?: number } } }).sendFx?.delay?.wet, 0.34),
+      tone: clamp01((song as SongState & { sendFx?: { delay?: { tone?: number } } }).sendFx?.delay?.tone, 0.72),
+    },
+    reverb: {
+      preDelay: clamp01(
+        (song as SongState & { sendFx?: { reverb?: { preDelay?: number } } }).sendFx?.reverb?.preDelay,
+        0.08
+      ),
+      decay: clamp01((song as SongState & { sendFx?: { reverb?: { decay?: number } } }).sendFx?.reverb?.decay, 0.48),
+      tone: clamp01((song as SongState & { sendFx?: { reverb?: { tone?: number } } }).sendFx?.reverb?.tone, 0.62),
+      wet: clamp01((song as SongState & { sendFx?: { reverb?: { wet?: number } } }).sendFx?.reverb?.wet, 0.42),
+      eco:
+        (song as SongState & { sendFx?: { reverb?: { eco?: boolean } } }).sendFx?.reverb?.eco === true,
+    },
+  },
+  masterSafety: {
+    enabled:
+      (song as SongState & { masterSafety?: { enabled?: boolean } }).masterSafety?.enabled === true,
+    amount: clamp01((song as SongState & { masterSafety?: { amount?: number } }).masterSafety?.amount, 0.08),
+  },
   tracks: song.tracks.map((track) => ({
     ...track,
     instrument: normalizeInstrumentParams(track.type, track.instrument),

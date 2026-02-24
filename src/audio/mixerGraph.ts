@@ -1,4 +1,4 @@
-import { SongState } from "../types/song";
+import { SongState, DelayDivision } from "../types/song";
 import { FxRack } from "./fx/FxRack";
 import { FxInstance } from "./fx/types";
 
@@ -21,7 +21,27 @@ interface TrackBusEntry {
   disconnect: () => void;
 }
 
-interface SendBus {
+interface DelayBus extends SendBusBase {
+  inputFilter: BiquadFilterNode;
+  delay: DelayNode;
+  feedbackGain: GainNode;
+  feedbackTone: BiquadFilterNode;
+  wet: GainNode;
+}
+
+interface ReverbBus extends SendBusBase {
+  preDelay: DelayNode;
+  convA: ConvolverNode;
+  convB: ConvolverNode;
+  convGainA: GainNode;
+  convGainB: GainNode;
+  tone: BiquadFilterNode;
+  wet: GainNode;
+  activeConvolver: 0 | 1;
+  lastIrKey: string;
+}
+
+interface SendBusBase {
   in: GainNode;
   returnGain: GainNode;
   nodes: AudioNode[];
@@ -31,6 +51,8 @@ export class MixerGraph {
   private static readonly MASTER_SUM_HEADROOM = 0.72;
   private static readonly TRACK_POST_TRIM_SYNTH = 0.92;
   private static readonly TRACK_POST_TRIM_DRUMS = 0.68;
+  private static readonly DELAY_SEND_MAX_GAIN = 1.5;
+  private static readonly REVERB_SEND_MAX_GAIN = 1.7;
 
   private masterIn: GainNode | null = null;
   private masterRackIn: GainNode | null = null;
@@ -40,8 +62,8 @@ export class MixerGraph {
   private masterSafetyShaper: WaveShaperNode | null = null;
   private masterSafetyOutput: GainNode | null = null;
   private masterGain: GainNode | null = null;
-  private delayBus: SendBus | null = null;
-  private reverbBus: SendBus | null = null;
+  private delayBus: DelayBus | null = null;
+  private reverbBus: ReverbBus | null = null;
   private trackBuses = new Map<string, TrackBusEntry>();
   private trackTypeById = new Map<string, "synth" | "drums">();
   private trackSendById = new Map<string, TrackSendValues>();
@@ -50,9 +72,45 @@ export class MixerGraph {
   private masterVolume = 0.8;
   private masterSafetyEnabled = false;
   private masterSafetyAmount = 0;
+  private delayFx: SongState["sendFx"]["delay"] = {
+    division: "1/8",
+    feedback: 0.42,
+    wet: 0.34,
+    tone: 0.72,
+  };
+  private reverbFx: SongState["sendFx"]["reverb"] = {
+    preDelay: 0.08,
+    decay: 0.48,
+    tone: 0.62,
+    wet: 0.42,
+    eco: false,
+  };
 
   private clamp01(value: number): number {
     return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+  }
+
+  private mapSendGain(value: number, kind: "delay" | "reverb"): number {
+    const normalized = this.clamp01(value);
+    const shaped = normalized <= 0 ? 0 : normalized ** 0.8;
+    const maxGain =
+      kind === "delay" ? MixerGraph.DELAY_SEND_MAX_GAIN : MixerGraph.REVERB_SEND_MAX_GAIN;
+    return shaped * maxGain;
+  }
+
+  private mapDelayDivisionToSeconds(tempo: number, division: DelayDivision): number {
+    const safeTempo = Math.max(40, Math.min(240, tempo || 120));
+    const quarter = 60 / safeTempo;
+    if (division === "1/4") {
+      return quarter;
+    }
+    if (division === "1/8") {
+      return quarter * 0.5;
+    }
+    if (division === "1/8d") {
+      return quarter * 0.75;
+    }
+    return quarter * 0.25;
   }
 
   private rampParam(param: AudioParam, value: number, when: number, timeConstant = 0.015): void {
@@ -138,7 +196,7 @@ export class MixerGraph {
     return base;
   }
 
-  private createDelayBus(context: AudioContext): SendBus {
+  private createDelayBus(context: AudioContext): DelayBus {
     const input = context.createGain();
     const inputFilter = context.createBiquadFilter();
     const delay = context.createDelay(1.5);
@@ -148,12 +206,12 @@ export class MixerGraph {
 
     input.gain.setValueAtTime(1, context.currentTime);
     inputFilter.type = "lowpass";
-    inputFilter.frequency.setValueAtTime(6200, context.currentTime);
-    delay.delayTime.setValueAtTime(0.25, context.currentTime);
-    feedbackGain.gain.setValueAtTime(0.28, context.currentTime);
+    inputFilter.frequency.setValueAtTime(7600, context.currentTime);
+    delay.delayTime.setValueAtTime(0.375, context.currentTime);
+    feedbackGain.gain.setValueAtTime(0.42, context.currentTime);
     feedbackTone.type = "lowpass";
-    feedbackTone.frequency.setValueAtTime(4800, context.currentTime);
-    wet.gain.setValueAtTime(0.2, context.currentTime);
+    feedbackTone.frequency.setValueAtTime(6200, context.currentTime);
+    wet.gain.setValueAtTime(0.32, context.currentTime);
 
     input.connect(inputFilter);
     inputFilter.connect(delay);
@@ -165,33 +223,56 @@ export class MixerGraph {
     return {
       in: input,
       returnGain: wet,
+      inputFilter,
+      delay,
+      feedbackGain,
+      feedbackTone,
+      wet,
       nodes: [input, inputFilter, delay, feedbackGain, feedbackTone, wet],
     };
   }
 
-  private createReverbBus(context: AudioContext): SendBus {
+  private createReverbBus(context: AudioContext): ReverbBus {
     const input = context.createGain();
     const preDelay = context.createDelay(0.25);
-    const convolver = context.createConvolver();
+    const convA = context.createConvolver();
+    const convB = context.createConvolver();
+    const convGainA = context.createGain();
+    const convGainB = context.createGain();
     const tone = context.createBiquadFilter();
     const wet = context.createGain();
 
     input.gain.setValueAtTime(1, context.currentTime);
     preDelay.delayTime.setValueAtTime(0.018, context.currentTime);
-    convolver.buffer = this.createImpulseResponse(context, 1.8, 2.4);
+    convA.buffer = this.createImpulseResponse(context, 1.8, 2.4);
     tone.type = "lowpass";
-    tone.frequency.setValueAtTime(5200, context.currentTime);
-    wet.gain.setValueAtTime(0.22, context.currentTime);
+    tone.frequency.setValueAtTime(5600, context.currentTime);
+    wet.gain.setValueAtTime(0.26, context.currentTime);
+    convGainA.gain.setValueAtTime(1, context.currentTime);
+    convGainB.gain.setValueAtTime(0, context.currentTime);
 
     input.connect(preDelay);
-    preDelay.connect(convolver);
-    convolver.connect(tone);
+    preDelay.connect(convA);
+    preDelay.connect(convB);
+    convA.connect(convGainA);
+    convB.connect(convGainB);
+    convGainA.connect(tone);
+    convGainB.connect(tone);
     tone.connect(wet);
 
     return {
       in: input,
       returnGain: wet,
-      nodes: [input, preDelay, convolver, tone, wet],
+      preDelay,
+      convA,
+      convB,
+      convGainA,
+      convGainB,
+      tone,
+      wet,
+      activeConvolver: 0,
+      lastIrKey: "init",
+      nodes: [input, preDelay, convA, convB, convGainA, convGainB, tone, wet],
     };
   }
 
@@ -287,12 +368,76 @@ export class MixerGraph {
   private applyTrackSendState(context: AudioContext, trackId: string, entry: TrackBusEntry): void {
     const values = this.trackSendById.get(trackId) ?? { delay: 0, reverb: 0 };
     const when = context.currentTime;
-    this.rampParam(entry.sendDelayGain.gain, this.clamp01(values.delay), when);
-    this.rampParam(entry.sendReverbGain.gain, this.clamp01(values.reverb), when);
+    this.rampParam(entry.sendDelayGain.gain, this.mapSendGain(values.delay, "delay"), when);
+    this.rampParam(entry.sendReverbGain.gain, this.mapSendGain(values.reverb, "reverb"), when);
   }
 
   private applyTrackInsertFxState(trackId: string, entry: TrackBusEntry): void {
     entry.insertRack.setFxInstances(this.trackInsertFxById.get(trackId) ?? []);
+  }
+
+  private applyDelayBusFx(context: AudioContext, tempo: number): void {
+    if (!this.delayBus) {
+      return;
+    }
+    const when = context.currentTime;
+    const delayTime = this.mapDelayDivisionToSeconds(tempo, this.delayFx.division);
+    const feedback = Math.max(0, Math.min(0.88, this.delayFx.feedback * 0.88));
+    const wet = Math.max(0, Math.min(0.7, this.delayFx.wet * 0.7));
+    const toneHz = 1800 + this.delayFx.tone * 9200;
+    this.rampParam(this.delayBus.delay.delayTime, delayTime, when, 0.03);
+    this.rampParam(this.delayBus.feedbackGain.gain, feedback, when, 0.03);
+    this.rampParam(this.delayBus.feedbackTone.frequency, toneHz, when, 0.03);
+    this.rampParam(this.delayBus.inputFilter.frequency, Math.min(14000, toneHz + 2200), when, 0.03);
+    this.rampParam(this.delayBus.wet.gain, wet, when, 0.03);
+  }
+
+  private rebuildReverbIrIfNeeded(context: AudioContext): void {
+    if (!this.reverbBus) {
+      return;
+    }
+    const lengthSeconds = this.reverbFx.eco ? 0.8 + this.reverbFx.decay * 1.2 : 1.2 + this.reverbFx.decay * 2.8;
+    const decayPower = 1.6 + this.reverbFx.decay * 3.4;
+    const key = `${this.reverbFx.eco ? 1 : 0}:${lengthSeconds.toFixed(2)}:${decayPower.toFixed(2)}`;
+    if (this.reverbBus.lastIrKey === key) {
+      return;
+    }
+    this.reverbBus.lastIrKey = key;
+    const nextIndex: 0 | 1 = this.reverbBus.activeConvolver === 0 ? 1 : 0;
+    const nextConv = nextIndex === 0 ? this.reverbBus.convA : this.reverbBus.convB;
+    const nextGain = nextIndex === 0 ? this.reverbBus.convGainA : this.reverbBus.convGainB;
+    const prevGain = nextIndex === 0 ? this.reverbBus.convGainB : this.reverbBus.convGainA;
+    nextConv.buffer = this.createImpulseResponse(context, lengthSeconds, decayPower);
+    const when = context.currentTime;
+    this.rampParam(nextGain.gain, 1, when, 0.04);
+    this.rampParam(prevGain.gain, 0, when, 0.04);
+    this.reverbBus.activeConvolver = nextIndex;
+  }
+
+  private applyReverbBusFx(context: AudioContext): void {
+    if (!this.reverbBus) {
+      return;
+    }
+    this.rebuildReverbIrIfNeeded(context);
+    const when = context.currentTime;
+    const preDelaySeconds = this.reverbFx.preDelay * 0.08;
+    const toneHz = 1400 + this.reverbFx.tone * 9800;
+    const wet = Math.max(0, Math.min(0.85, this.reverbFx.wet * 0.8));
+    this.rampParam(this.reverbBus.preDelay.delayTime, preDelaySeconds, when, 0.03);
+    this.rampParam(this.reverbBus.tone.frequency, toneHz, when, 0.03);
+    this.rampParam(this.reverbBus.wet.gain, wet, when, 0.03);
+  }
+
+  private applyBusAndMasterState(song: SongState): void {
+    const context = (this.masterIn?.context as AudioContext | undefined) ?? null;
+    if (!context) {
+      return;
+    }
+    this.delayFx = song.sendFx?.delay ?? this.delayFx;
+    this.reverbFx = song.sendFx?.reverb ?? this.reverbFx;
+    this.applyDelayBusFx(context, song.tempo);
+    this.applyReverbBusFx(context);
+    this.setMasterSafety(song.masterSafety ?? { enabled: false, amount: 0 });
   }
 
   private fadeAndDisposeTrackBus(context: AudioContext, entry: TrackBusEntry): void {
@@ -334,6 +479,7 @@ export class MixerGraph {
     this.trackTypeById.clear();
     this.masterFx = song.masterFx ?? [];
     this.masterInsertRack?.setFxInstances(this.masterFx);
+    this.applyBusAndMasterState(song);
     for (const track of song.tracks) {
       this.trackTypeById.set(track.id, track.type);
       const maybeSend = (track as typeof track & {
@@ -377,8 +523,8 @@ export class MixerGraph {
       return;
     }
     const when = bus.input.context.currentTime;
-    this.rampParam(bus.sendDelayGain.gain, next.delay, when);
-    this.rampParam(bus.sendReverbGain.gain, next.reverb, when);
+    this.rampParam(bus.sendDelayGain.gain, this.mapSendGain(next.delay, "delay"), when);
+    this.rampParam(bus.sendReverbGain.gain, this.mapSendGain(next.reverb, "reverb"), when);
   }
 
   setMasterSafety(
@@ -406,11 +552,11 @@ export class MixerGraph {
     if (this.masterSafetyShaper) {
       this.masterSafetyShaper.curve =
         amount > 0.0001
-          ? (this.createDriveCurve(amount * 0.08) as unknown as Float32Array<ArrayBuffer>)
+          ? (this.createDriveCurve(0.02 + amount * 0.22) as unknown as Float32Array<ArrayBuffer>)
           : null;
     }
-    const drive = 1 + amount * 0.35;
-    const makeup = Math.max(0.9, 1 - amount * 0.08);
+    const drive = 1 + amount * 0.22;
+    const makeup = Math.max(0.86, 1 - amount * 0.16);
     const when = context.currentTime;
     this.rampParam(this.masterSafetyDrive.gain, drive, when, 0.02);
     this.rampParam(this.masterSafetyOutput.gain, makeup, when, 0.02);

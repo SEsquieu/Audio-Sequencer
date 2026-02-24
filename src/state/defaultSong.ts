@@ -4,12 +4,33 @@ import { buildDefaultInstrument } from "./instrumentDefaults";
 const createEmptySynthSteps = () => Array.from({ length: 16 }, () => []);
 const createEmptyDrumSteps = () => Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
 const createDefaultTrackSend = () => ({ delay: 0, reverb: 0 });
+const createDefaultSendFx = () => ({
+  delay: {
+    division: "1/8" as const,
+    feedback: 0.42,
+    wet: 0.34,
+    tone: 0.72,
+  },
+  reverb: {
+    preDelay: 0.08,
+    decay: 0.48,
+    tone: 0.62,
+    wet: 0.42,
+    eco: false,
+  },
+});
+const createDefaultMasterSafety = () => ({
+  enabled: false,
+  amount: 0.08,
+});
 
 export const createDefaultSong = (): SongState => ({
   tempo: 120,
   swing: 0,
   bars: 8,
   masterFx: [],
+  sendFx: createDefaultSendFx(),
+  masterSafety: createDefaultMasterSafety(),
   tracks: [
     {
       id: "t-lead",
