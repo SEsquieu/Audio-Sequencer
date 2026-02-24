@@ -400,7 +400,7 @@ export class InstrumentEngine {
     const tone = context.createBiquadFilter();
 
     const decay = Math.max(0.08, track.instrument.decay * 0.75 + 0.08);
-    const level = Math.max(MIN_GAIN, velocity * track.instrument.gain * 1.35);
+    const level = Math.max(MIN_GAIN, velocity * track.instrument.gain * 1.05);
     const punch = Math.max(0, Math.min(1, track.instrument.drive * 1.15 + 0.2));
     const startFreq = 178 + punch * 32;
     const endFreq = 45 + punch * 8;
@@ -419,14 +419,14 @@ export class InstrumentEngine {
     transientFilter.frequency.setValueAtTime(1850, when);
     transientFilter.Q.setValueAtTime(0.9, when);
     transientAmp.gain.setValueAtTime(MIN_GAIN, when);
-    transientAmp.gain.linearRampToValueAtTime(level * 0.24, when + 0.001);
+    transientAmp.gain.linearRampToValueAtTime(level * 0.18, when + 0.001);
     transientAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, transientEnd);
 
     transientTone.type = "triangle";
     transientTone.frequency.setValueAtTime(780, when);
     transientTone.frequency.exponentialRampToValueAtTime(180, transientEnd);
     transientToneAmp.gain.setValueAtTime(MIN_GAIN, when);
-    transientToneAmp.gain.linearRampToValueAtTime(level * 0.18, when + 0.0008);
+    transientToneAmp.gain.linearRampToValueAtTime(level * 0.13, when + 0.0008);
     transientToneAmp.gain.exponentialRampToValueAtTime(MIN_GAIN, transientEnd);
 
     drive.curve = createDriveCurve(Math.max(0.15, Math.min(0.65, punch))) as unknown as Float32Array<ArrayBuffer>;

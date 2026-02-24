@@ -25,6 +25,10 @@ interface SendBus {
 }
 
 export class MixerGraph {
+  private static readonly MASTER_SUM_HEADROOM = 0.72;
+  private static readonly TRACK_POST_TRIM_SYNTH = 0.92;
+  private static readonly TRACK_POST_TRIM_DRUMS = 0.68;
+
   private masterIn: GainNode | null = null;
   private masterRackIn: GainNode | null = null;
   private masterRackOut: GainNode | null = null;
@@ -38,8 +42,8 @@ export class MixerGraph {
   private trackTypeById = new Map<string, "synth" | "drums">();
   private trackSendById = new Map<string, TrackSendValues>();
   private masterVolume = 0.8;
-  private masterSafetyEnabled = true;
-  private masterSafetyAmount = 0.2;
+  private masterSafetyEnabled = false;
+  private masterSafetyAmount = 0;
 
   private clamp01(value: number): number {
     return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
@@ -78,11 +82,11 @@ export class MixerGraph {
     this.masterSafetyOutput = context.createGain();
     this.masterGain = context.createGain();
 
-    this.masterIn.gain.setValueAtTime(1, context.currentTime);
+    this.masterIn.gain.setValueAtTime(MixerGraph.MASTER_SUM_HEADROOM, context.currentTime);
     this.masterRackIn.gain.setValueAtTime(1, context.currentTime);
     this.masterRackOut.gain.setValueAtTime(1, context.currentTime);
     this.masterSafetyDrive.gain.setValueAtTime(1, context.currentTime);
-    this.masterSafetyShaper.curve = this.createDriveCurve(0.35) as unknown as Float32Array<ArrayBuffer>;
+    this.masterSafetyShaper.curve = null;
     this.masterSafetyShaper.oversample = "2x";
     this.masterSafetyOutput.gain.setValueAtTime(1, context.currentTime);
     this.masterGain.gain.setValueAtTime(this.masterVolume, context.currentTime);
@@ -100,7 +104,7 @@ export class MixerGraph {
     this.delayBus.returnGain.connect(this.masterIn);
     this.reverbBus.returnGain.connect(this.masterIn);
 
-    this.setMasterSafety({ enabled: true, amount: this.masterSafetyAmount }, context);
+    this.setMasterSafety({ enabled: this.masterSafetyEnabled, amount: this.masterSafetyAmount }, context);
   }
 
   getOutputNode(context: AudioContext): AudioNode {
@@ -193,7 +197,7 @@ export class MixerGraph {
     input.gain.setValueAtTime(1, context.currentTime);
     rackIn.gain.setValueAtTime(1, context.currentTime);
     rackOut.gain.setValueAtTime(1, context.currentTime);
-    postGain.gain.setValueAtTime(1, context.currentTime);
+    postGain.gain.setValueAtTime(MixerGraph.TRACK_POST_TRIM_SYNTH, context.currentTime);
     sendTap.gain.setValueAtTime(1, context.currentTime);
     sendDelayGain.gain.setValueAtTime(0, context.currentTime);
     sendReverbGain.gain.setValueAtTime(0, context.currentTime);
@@ -248,11 +252,11 @@ export class MixerGraph {
 
     lowTone.type = "lowshelf";
     lowTone.frequency.setValueAtTime(130, context.currentTime);
-    lowTone.gain.setValueAtTime(2.5, context.currentTime);
+    lowTone.gain.setValueAtTime(1.25, context.currentTime);
 
     highTone.type = "highshelf";
     highTone.frequency.setValueAtTime(4200, context.currentTime);
-    highTone.gain.setValueAtTime(1.3, context.currentTime);
+    highTone.gain.setValueAtTime(0.6, context.currentTime);
 
     base.rackIn.connect(drive);
     drive.connect(compressor);
@@ -261,6 +265,7 @@ export class MixerGraph {
     highTone.connect(base.rackOut);
 
     base.type = "drums";
+    base.postGain.gain.setValueAtTime(MixerGraph.TRACK_POST_TRIM_DRUMS, context.currentTime);
     base.nodes.push(drive, compressor, lowTone, highTone);
     return base;
   }
@@ -372,8 +377,14 @@ export class MixerGraph {
     }
 
     const amount = this.masterSafetyEnabled ? this.masterSafetyAmount : 0;
-    const drive = 1 + amount * 1.6;
-    const makeup = 1 / Math.max(1, 1 + amount * 0.65);
+    if (this.masterSafetyShaper) {
+      this.masterSafetyShaper.curve =
+        amount > 0.0001
+          ? (this.createDriveCurve(amount * 0.08) as unknown as Float32Array<ArrayBuffer>)
+          : null;
+    }
+    const drive = 1 + amount * 0.35;
+    const makeup = Math.max(0.9, 1 - amount * 0.08);
     const when = context.currentTime;
     this.rampParam(this.masterSafetyDrive.gain, drive, when, 0.02);
     this.rampParam(this.masterSafetyOutput.gain, makeup, when, 0.02);
