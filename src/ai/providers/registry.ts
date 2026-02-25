@@ -1,3 +1,4 @@
+import { createAnthropicIntentProvider, getAnthropicProviderDescriptor } from "./anthropic";
 import { createOllamaIntentProvider, getOllamaProviderDescriptor } from "./ollama";
 import { hasStoredProviderApiKey } from "./keys";
 import { createOpenAiIntentProvider, getOpenAiProviderDescriptor } from "./openai";
@@ -36,21 +37,7 @@ const STATIC_PROVIDER_DESCRIPTORS: AiProviderDescriptor[] = [
   },
   getOllamaProviderDescriptor(),
   getOpenAiProviderDescriptor(),
-  {
-    id: "user-api-anthropic",
-    kind: "user_api",
-    label: "Anthropic (User API Key)",
-    authMode: "user_api_key",
-    latencyClass: "medium",
-    costClass: "medium",
-    enabledByDefault: false,
-    capabilities: {
-      structuredOutput: true,
-      streaming: true,
-      supportedTaskTypes: ["sound_edit", "fx_routing", "pattern_edit", "arrangement_edit", "creative_transform"],
-    },
-    availability: "unknown",
-  },
+  getAnthropicProviderDescriptor(),
   {
     id: "developer-hosted",
     kind: "hosted",
@@ -98,6 +85,9 @@ export const createAiIntentProvider = (id: AiProviderId): AiIntentProvider | nul
   }
   if (id === "user-api-openai") {
     return createOpenAiIntentProvider();
+  }
+  if (id === "user-api-anthropic") {
+    return createAnthropicIntentProvider();
   }
   return null;
 };

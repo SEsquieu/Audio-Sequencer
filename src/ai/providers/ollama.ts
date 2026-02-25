@@ -5,6 +5,7 @@ import {
   AiProviderHealth,
   StructuredIntentEnvelope,
 } from "./types";
+import { getStoredProviderModel } from "./settings";
 
 const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 const DEFAULT_OLLAMA_MODEL = "gemma:2b";
@@ -18,6 +19,10 @@ const getConfiguredBaseUrl = (): string => {
 };
 
 const getConfiguredModel = (): string => {
+  const stored = getStoredProviderModel("ollama-local");
+  if (stored) {
+    return stored;
+  }
   const envModel =
     typeof import.meta !== "undefined" && (import.meta as ImportMeta & { env?: Record<string, string> }).env
       ? (import.meta as ImportMeta & { env: Record<string, string> }).env.VITE_OLLAMA_MODEL

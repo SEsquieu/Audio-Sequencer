@@ -54,9 +54,9 @@ const buildSmartPatchPlans = (request: DiffEngineRequest): DiffPlanCandidate[] =
 const compileRankValidPlans = (request: DiffEngineRequest, plans: DiffPlanCandidate[]) =>
   rankAndDedupeCandidates(
     plans
-      .map((plan) => compileDiffPlanCandidate(plan))
+      .map((plan) => compileDiffPlanCandidate(plan, request.song))
       .filter((candidate): candidate is NonNullable<typeof candidate> => !!candidate)
-      .filter((candidate) => validateCompiledDiffCandidate(request.song, candidate).ok),
+      .filter((candidate) => validateCompiledDiffCandidate(request.song, candidate, request.locks).ok),
     request.maxCandidates ?? 3
   );
 
@@ -157,7 +157,11 @@ export const proposeDiffPatchCandidatesAsyncDetailed = async (request: DiffEngin
     };
   };
 
-  if (route.selectedProviderId === "ollama-local" || route.selectedProviderId === "user-api-openai") {
+  if (
+    route.selectedProviderId === "ollama-local" ||
+    route.selectedProviderId === "user-api-openai" ||
+    route.selectedProviderId === "user-api-anthropic"
+  ) {
     const { signal, cleanup } = withTimeoutSignal(request.signal, request.timeoutMs ?? 10000);
     try {
       const provider = createAiIntentProvider(route.selectedProviderId);

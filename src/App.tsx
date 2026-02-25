@@ -14,6 +14,7 @@ import {
 import { aiProposePatchDetailedAsync } from "./ai/aiProposePatch";
 import { listAiProviderDescriptors, probeAiProviderHealth } from "./ai/providers/registry";
 import { getStoredProviderApiKey, hasStoredProviderApiKey, setStoredProviderApiKey } from "./ai/providers/keys";
+import { getStoredProviderModel, setStoredProviderModel } from "./ai/providers/settings";
 import { getStoredAiProviderPreference, setStoredAiProviderPreference } from "./ai/providers/router";
 import type { AiProviderDescriptor, AiProviderId } from "./ai/providers/types";
 import type { DiffEngineDiagnostics } from "./ai/diffEngine/types";
@@ -515,6 +516,13 @@ function App() {
   const [aiProviderDescriptors, setAiProviderDescriptors] = useState<AiProviderDescriptor[]>(() => listAiProviderDescriptors());
   const [openAiApiKeyDraft, setOpenAiApiKeyDraft] = useState(() => getStoredProviderApiKey("user-api-openai"));
   const [hasOpenAiApiKey, setHasOpenAiApiKey] = useState(() => hasStoredProviderApiKey("user-api-openai"));
+  const [anthropicApiKeyDraft, setAnthropicApiKeyDraft] = useState(() => getStoredProviderApiKey("user-api-anthropic"));
+  const [hasAnthropicApiKey, setHasAnthropicApiKey] = useState(() => hasStoredProviderApiKey("user-api-anthropic"));
+  const [ollamaModelDraft, setOllamaModelDraft] = useState(() => getStoredProviderModel("ollama-local") || "gemma:2b");
+  const [openAiModelDraft, setOpenAiModelDraft] = useState(() => getStoredProviderModel("user-api-openai") || "gpt-4.1-mini");
+  const [anthropicModelDraft, setAnthropicModelDraft] = useState(
+    () => getStoredProviderModel("user-api-anthropic") || "claude-3-5-haiku-latest"
+  );
   const [aiProviderHealth, setAiProviderHealth] = useState<Partial<Record<AiProviderId, { ok: boolean; reason?: string }>>>({});
   const aiRequestSeqRef = useRef(0);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
@@ -1703,14 +1711,19 @@ function App() {
 
   useEffect(() => {
     setAiProviderDescriptors(listAiProviderDescriptors());
-  }, [openAiApiKeyDraft]);
+  }, [openAiApiKeyDraft, anthropicApiKeyDraft]);
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
       const providers = listAiProviderDescriptors();
       const probeTargets = providers
-        .filter((provider) => provider.id === "ollama-local" || provider.id === "user-api-openai")
+        .filter(
+          (provider) =>
+            provider.id === "ollama-local" ||
+            provider.id === "user-api-openai" ||
+            provider.id === "user-api-anthropic"
+        )
         .filter((provider) => provider.availability !== "unavailable")
         .map((provider) => provider.id);
       const results = await Promise.all(
@@ -1736,7 +1749,7 @@ function App() {
     return () => {
       cancelled = true;
     };
-  }, [openAiApiKeyDraft, isAiOpen]);
+  }, [openAiApiKeyDraft, anthropicApiKeyDraft, isAiOpen]);
 
   const cancelAiGeneration = () => {
     aiAbortControllerRef.current?.abort();
@@ -1754,6 +1767,21 @@ function App() {
     setStoredProviderApiKey("user-api-openai", openAiApiKeyDraft);
     setHasOpenAiApiKey(hasStoredProviderApiKey("user-api-openai"));
     setAiProviderDescriptors(listAiProviderDescriptors());
+  };
+
+  const onAnthropicApiKeySave = () => {
+    setStoredProviderApiKey("user-api-anthropic", anthropicApiKeyDraft);
+    setHasAnthropicApiKey(hasStoredProviderApiKey("user-api-anthropic"));
+    setAiProviderDescriptors(listAiProviderDescriptors());
+  };
+
+  const onProviderModelSave = (providerId: AiProviderId, value: string) => {
+    setStoredProviderModel(providerId, value);
+    setAiProviderHealth((prev) => {
+      const next = { ...prev };
+      delete next[providerId];
+      return next;
+    });
   };
 
   const onSubmitPrompt = (event: FormEvent) => {
@@ -4297,7 +4325,10 @@ function App() {
 
         <div className="ai-provider-status-list">
           {aiProviderDescriptors
-            .filter((provider) => provider.id === "ollama-local" || provider.id === "user-api-openai")
+            .filter(
+              (provider) =>
+                provider.id === "ollama-local" || provider.id === "user-api-openai" || provider.id === "user-api-anthropic"
+            )
             .map((provider) => {
               const health = aiProviderHealth[provider.id];
               const statusLabel =
@@ -4334,6 +4365,76 @@ function App() {
                 spellCheck={false}
               />
               <button type="button" onClick={onOpenAiApiKeySave} disabled={isAiGenerating}>
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+        {aiProviderPreference === "user-api-anthropic" && !hasAnthropicApiKey && (
+          <div className="ai-provider-key-panel">
+            <label className="ai-form-label" htmlFor="anthropic-api-key-input">
+              Anthropic API Key (local only)
+            </label>
+            <div className="ai-provider-key-row">
+              <input
+                id="anthropic-api-key-input"
+                className="ai-provider-key-input"
+                type="password"
+                value={anthropicApiKeyDraft}
+                onChange={(e) => setAnthropicApiKeyDraft(e.target.value)}
+                placeholder="sk-ant-..."
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button type="button" onClick={onAnthropicApiKeySave} disabled={isAiGenerating}>
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(aiProviderPreference === "ollama-local" ||
+          aiProviderPreference === "user-api-openai" ||
+          aiProviderPreference === "user-api-anthropic") && (
+          <div className="ai-provider-key-panel">
+            <label className="ai-form-label" htmlFor="ai-provider-model-input">
+              Model Override (optional)
+            </label>
+            <div className="ai-provider-key-row">
+              <input
+                id="ai-provider-model-input"
+                className="ai-provider-key-input"
+                type="text"
+                value={
+                  aiProviderPreference === "ollama-local"
+                    ? ollamaModelDraft
+                    : aiProviderPreference === "user-api-openai"
+                      ? openAiModelDraft
+                      : anthropicModelDraft
+                }
+                onChange={(e) => {
+                  if (aiProviderPreference === "ollama-local") setOllamaModelDraft(e.target.value);
+                  else if (aiProviderPreference === "user-api-openai") setOpenAiModelDraft(e.target.value);
+                  else if (aiProviderPreference === "user-api-anthropic") setAnthropicModelDraft(e.target.value);
+                }}
+                placeholder="Leave blank for default"
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button
+                type="button"
+                onClick={() =>
+                  onProviderModelSave(
+                    aiProviderPreference as AiProviderId,
+                    aiProviderPreference === "ollama-local"
+                      ? ollamaModelDraft
+                      : aiProviderPreference === "user-api-openai"
+                        ? openAiModelDraft
+                        : anthropicModelDraft
+                  )
+                }
+                disabled={isAiGenerating}
+              >
                 Save
               </button>
             </div>

@@ -37,11 +37,65 @@ interface AddTrackFxIntent {
   note?: string;
 }
 
+interface RouteTrackSendBusIntent {
+  type: "route_track_send_bus";
+  track?: string;
+  bus?: "delay" | "reverb";
+  value?: string;
+  confidence?: number;
+  note?: string;
+}
+
+interface SetTrackFxParamIntent {
+  type: "set_track_fx_param";
+  track?: string;
+  fxType?: FxType;
+  fxId?: string;
+  param?: string;
+  value?: number | string | boolean;
+  confidence?: number;
+  note?: string;
+}
+
+interface SetDrumStepIntent {
+  type: "set_drum_step";
+  track?: string;
+  barIndex?: number;
+  stepIndex?: number;
+  lane?: "kick" | "snare" | "hat";
+  value?: number;
+  confidence?: number;
+  note?: string;
+}
+
+interface TransposeTrackBarNotesIntent {
+  type: "transpose_track_bar_notes";
+  track?: string;
+  barIndex?: number;
+  semitones?: number;
+  confidence?: number;
+  note?: string;
+}
+
+interface CopyTrackBarAssignmentIntent {
+  type: "copy_track_bar_assignment";
+  track?: string;
+  fromBarIndex?: number;
+  toBarIndex?: number;
+  confidence?: number;
+  note?: string;
+}
+
 type ProviderIntentLike =
   | CanonicalCommandIntent
   | SetTrackGainIntent
   | SetTrackSendIntent
   | AddTrackFxIntent
+  | RouteTrackSendBusIntent
+  | SetTrackFxParamIntent
+  | SetDrumStepIntent
+  | TransposeTrackBarNotesIntent
+  | CopyTrackBarAssignmentIntent
   | string
   | {
       type?: string;
@@ -56,6 +110,27 @@ type ProviderIntentLike =
 
 const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
 const clampGain = (value: number) => Math.max(0, Math.min(1.2, value));
+const clampSendUnit = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+const clampFxParamValue = (fxType: FxType, param: string, value: unknown): number | string | boolean | null => {
+  if (fxType === "chorus") {
+    if (param === "rate") return Math.max(0.01, Math.min(8, Number(value)));
+    if (param === "depth" || param === "mix") return clampSendUnit(Number(value));
+  }
+  if (fxType === "djFilter") {
+    if (param === "cutoff" || param === "q") return clampSendUnit(Number(value));
+    if (param === "mode") return value === "hp" ? "hp" : value === "lp" ? "lp" : null;
+  }
+  if (fxType === "saturator") {
+    if (param === "drive" || param === "mix") return clampSendUnit(Number(value));
+    if (param === "output") return Math.max(0, Math.min(2, Number(value)));
+  }
+  if (fxType === "eq3") {
+    if (["low", "mid", "high"].includes(param)) return Math.max(-24, Math.min(24, Number(value)));
+    if (["lowFreq", "midFreq", "highFreq"].includes(param)) return Math.max(20, Math.min(18000, Number(value)));
+    if (param === "midQ") return Math.max(0.1, Math.min(16, Number(value)));
+  }
+  return null;
+};
 
 const normalizeText = (text: string) =>
   text
@@ -83,6 +158,22 @@ const resolveTrackName = (request: DiffEngineRequest, requested?: string): strin
     }
   }
   return request.song.tracks[0]?.name ?? "track";
+};
+
+const resolveTrack = (request: DiffEngineRequest, requested?: string) => {
+  if (requested) {
+    const exact = request.song.tracks.find((track) => track.name.toLowerCase() === requested.toLowerCase());
+    if (exact) {
+      return exact;
+    }
+  }
+  if (request.scope.selectedTrackId) {
+    const selected = request.song.tracks.find((track) => track.id === request.scope.selectedTrackId);
+    if (selected) {
+      return selected;
+    }
+  }
+  return request.song.tracks[0] ?? null;
 };
 
 const getSelectedTrack = (request: DiffEngineRequest) =>
@@ -121,6 +212,9 @@ const inferTargetTrackFromCommand = (request: DiffEngineRequest, commandText: st
 const inferCommandKind = (commandText: string) => {
   const text = normalizeText(commandText);
   if (/^(add|insert) /.test(text)) {
+    return "insert_fx";
+  }
+  if (/\bchorus\b|\bdj ?filter\b|\bsaturat|\beq3?\b/.test(text) && /\b(mix|rate|depth|cutoff|q|drive|output|mode|low|mid|high)\b/.test(text)) {
     return "insert_fx";
   }
   if (/\bdelay\b|\breverb\b/.test(text)) {
@@ -251,6 +345,22 @@ const toCanonicalCommand = (value: unknown, request: DiffEngineRequest): Canonic
     }
   }
 
+  if (type === "route_track_send_bus") {
+    const intent = raw as unknown as RouteTrackSendBusIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (
+      (intent.bus === "delay" || intent.bus === "reverb") &&
+      typeof intent.value === "string"
+    ) {
+      return {
+        type: "canonical_command",
+        command: `${track} ${intent.bus} bus ${intent.value}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
   if (type === "add_track_fx") {
     const intent = raw as unknown as AddTrackFxIntent;
     if (intent.fxType) {
@@ -264,6 +374,298 @@ const toCanonicalCommand = (value: unknown, request: DiffEngineRequest): Canonic
         note: intent.note,
       };
     }
+  }
+
+  if (type === "set_drum_step") {
+    const intent = raw as unknown as SetDrumStepIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (
+      (intent.lane === "kick" || intent.lane === "snare" || intent.lane === "hat") &&
+      typeof intent.stepIndex === "number"
+    ) {
+      const stepHuman = Math.max(1, Math.round(intent.stepIndex + 1));
+      const valuePct = Math.round(clamp01(intent.value ?? 1) * 100);
+      return {
+        type: "canonical_command",
+        command: `${track} ${intent.lane} step ${stepHuman} ${valuePct}%`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
+  if (type === "transpose_track_bar_notes") {
+    const intent = raw as unknown as TransposeTrackBarNotesIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (typeof intent.semitones === "number") {
+      const dir = intent.semitones >= 0 ? "up" : "down";
+      return {
+        type: "canonical_command",
+        command: `transpose ${track} ${dir} ${Math.abs(Math.round(intent.semitones))}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
+  if (type === "copy_track_bar_assignment") {
+    const intent = raw as unknown as CopyTrackBarAssignmentIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (typeof intent.fromBarIndex === "number" && typeof intent.toBarIndex === "number") {
+      return {
+        type: "canonical_command",
+        command: `copy ${track} bar ${Math.round(intent.fromBarIndex + 1)} to bar ${Math.round(intent.toBarIndex + 1)}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
+  return null;
+};
+
+const toTypedPlanCandidate = (value: unknown, request: DiffEngineRequest): DiffPlanCandidate | null => {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  const type = typeof raw.type === "string" ? raw.type : "";
+
+  if (type === "set_track_gain") {
+    const intent = raw as unknown as SetTrackGainIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track) {
+      return null;
+    }
+    const current = track.instrument.gain ?? 0.5;
+    let nextValue: number | null = null;
+    if (intent.mode === "increase") {
+      nextValue = clampGain(current + Math.abs(intent.delta ?? 0.1));
+    } else if (intent.mode === "decrease") {
+      nextValue = clampGain(current - Math.abs(intent.delta ?? 0.1));
+    } else if (typeof intent.value === "number") {
+      nextValue = clampGain(intent.value);
+    }
+    if (nextValue === null) {
+      return null;
+    }
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.8,
+      label: `Set ${track.name} Gain`,
+      explanation: intent.note ?? `Set ${track.name} gain to ${Math.round(nextValue * 100)}%`,
+      actions: [
+        {
+          type: "set_track_param",
+          trackId: track.id,
+          param: "gain",
+          value: nextValue,
+        },
+      ],
+    };
+  }
+
+  if (type === "set_track_send") {
+    const intent = raw as unknown as SetTrackSendIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || (intent.send !== "delay" && intent.send !== "reverb") || typeof intent.value !== "number") {
+      return null;
+    }
+    const nextValue = clamp01(intent.value);
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.8,
+      label: `Set ${track.name} ${intent.send === "delay" ? "Delay" : "Reverb"} Send`,
+      explanation: intent.note ?? `Set ${track.name} ${intent.send} send to ${Math.round(nextValue * 100)}%`,
+      actions: [
+        {
+          type: "set_track_send",
+          trackId: track.id,
+          send: intent.send,
+          value: nextValue,
+        },
+      ],
+    };
+  }
+
+  if (type === "add_track_fx") {
+    const intent = raw as unknown as AddTrackFxIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || !intent.fxType) {
+      return null;
+    }
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.78,
+      label: `Add ${intent.fxType} FX`,
+      explanation: intent.note ?? `Add ${intent.fxType} insert FX to ${track.name}`,
+      actions: [
+        {
+          type: "add_track_insert_fx",
+          trackId: track.id,
+          fxType: intent.fxType,
+        },
+      ],
+    };
+  }
+
+  if (type === "route_track_send_bus") {
+    const intent = raw as unknown as RouteTrackSendBusIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || (intent.bus !== "delay" && intent.bus !== "reverb") || typeof intent.value !== "string") {
+      return null;
+    }
+    const normalizedValue = normalizeText(intent.value);
+    const busValue =
+      intent.bus === "delay"
+        ? normalizedValue === "custom"
+          ? "custom"
+          : normalizedValue === "echo a" || normalizedValue === "echoa"
+            ? "echoA"
+            : normalizedValue === "echo b" || normalizedValue === "echob"
+              ? "echoB"
+              : null
+        : normalizedValue === "custom"
+          ? "custom"
+          : normalizedValue === "room a" || normalizedValue === "rooma"
+            ? "roomA"
+            : normalizedValue === "hall b" || normalizedValue === "hallb"
+              ? "hallB"
+              : null;
+    if (!busValue) {
+      return null;
+    }
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.8,
+      label: `Route ${track.name} ${intent.bus === "delay" ? "Delay" : "Reverb"} Bus`,
+      explanation: intent.note ?? `Route ${track.name} ${intent.bus} to ${busValue}`,
+      actions: [
+        {
+          type: "route_track_send_bus",
+          trackId: track.id,
+          bus: intent.bus,
+          value: busValue as any,
+        },
+      ],
+    };
+  }
+
+  if (type === "set_track_fx_param") {
+    const intent = raw as unknown as SetTrackFxParamIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || !intent.fxType || typeof intent.param !== "string") {
+      return null;
+    }
+    const clamped = clampFxParamValue(intent.fxType, intent.param, intent.value);
+    if (clamped === null) {
+      return null;
+    }
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.76,
+      label: `Set ${intent.fxType} ${intent.param}`,
+      explanation: intent.note ?? `Set ${track.name} ${intent.fxType} ${intent.param}`,
+      actions: [
+        {
+          type: "set_track_insert_fx_param",
+          trackId: track.id,
+          fxId: intent.fxId,
+          fxType: intent.fxType,
+          param: intent.param,
+          value: clamped,
+        },
+      ],
+    };
+  }
+
+  if (type === "set_drum_step") {
+    const intent = raw as unknown as SetDrumStepIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "drums") {
+      return null;
+    }
+    if (intent.lane !== "kick" && intent.lane !== "snare" && intent.lane !== "hat") {
+      return null;
+    }
+    if (typeof intent.stepIndex !== "number") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const stepIndex = Math.max(0, Math.min(15, Math.round(intent.stepIndex)));
+    const value = clamp01(typeof intent.value === "number" ? intent.value : 1);
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.78,
+      label: `Set ${track.name} ${intent.lane} Step`,
+      explanation: intent.note ?? `Set ${track.name} ${intent.lane} on step ${stepIndex + 1}`,
+      actions: [
+        {
+          type: "set_drum_step",
+          trackId: track.id,
+          barIndex,
+          stepIndex,
+          lane: intent.lane,
+          value,
+        },
+      ],
+    };
+  }
+
+  if (type === "transpose_track_bar_notes") {
+    const intent = raw as unknown as TransposeTrackBarNotesIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "synth" || typeof intent.semitones !== "number") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const semitones = Math.max(-24, Math.min(24, Math.round(intent.semitones)));
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.76,
+      label: `Transpose ${track.name} Bar Notes`,
+      explanation: intent.note ?? `Transpose ${track.name} notes by ${semitones} semitones`,
+      actions: [
+        {
+          type: "transpose_track_bar_notes",
+          trackId: track.id,
+          barIndex,
+          semitones,
+        },
+      ],
+    };
+  }
+
+  if (type === "copy_track_bar_assignment") {
+    const intent = raw as unknown as CopyTrackBarAssignmentIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || typeof intent.fromBarIndex !== "number" || typeof intent.toBarIndex !== "number") {
+      return null;
+    }
+    const fromBarIndex = Math.max(0, Math.round(intent.fromBarIndex));
+    const toBarIndex = Math.max(0, Math.round(intent.toBarIndex));
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.72,
+      label: `Copy ${track.name} Bar`,
+      explanation: intent.note ?? `Copy ${track.name} bar ${fromBarIndex + 1} to bar ${toBarIndex + 1}`,
+      actions: [
+        {
+          type: "copy_track_bar_assignment",
+          trackId: track.id,
+          fromBarIndex,
+          toBarIndex,
+        },
+      ],
+    };
   }
 
   return null;
@@ -324,6 +726,27 @@ export const compileProviderIntentsToPlans = (
   let rejectedIntentCount = 0;
 
   for (const rawIntent of envelope.intents) {
+    const typedPlan = toTypedPlanCandidate(rawIntent, request);
+    if (typedPlan) {
+      const syntheticCanonical = toCanonicalCommand(rawIntent, request);
+      if (syntheticCanonical) {
+        canonicalCommands.push(syntheticCanonical.command);
+        const adjusted = adjustConfidenceForPromptAlignment(request, syntheticCanonical.command, typedPlan.confidence);
+        if (adjusted.rejectReason) {
+          rejectedIntentCount += 1;
+          continue;
+        }
+        plans.push({
+          ...typedPlan,
+          confidence: adjusted.confidence,
+          explanation: typedPlan.explanation,
+        });
+        continue;
+      }
+      plans.push(typedPlan);
+      continue;
+    }
+
     const coerced = coerceProviderIntent(rawIntent) ?? toCanonicalCommand(rawIntent, request);
     if (!coerced) {
       rejectedIntentCount += 1;

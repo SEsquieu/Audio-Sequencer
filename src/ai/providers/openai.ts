@@ -6,6 +6,7 @@ import {
   StructuredIntentEnvelope,
 } from "./types";
 import { getStoredProviderApiKey } from "./keys";
+import { getStoredProviderModel } from "./settings";
 
 const DEFAULT_OPENAI_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_OPENAI_MODEL = "gpt-4.1-mini";
@@ -19,6 +20,10 @@ const getConfiguredBaseUrl = (): string => {
 };
 
 const getConfiguredModel = (): string => {
+  const stored = getStoredProviderModel("user-api-openai");
+  if (stored) {
+    return stored;
+  }
   const envModel =
     typeof import.meta !== "undefined" && (import.meta as ImportMeta & { env?: Record<string, string> }).env
       ? (import.meta as ImportMeta & { env: Record<string, string> }).env.VITE_OPENAI_MODEL
@@ -89,17 +94,62 @@ const normalizeEnvelopeShape = (value: unknown): StructuredIntentEnvelope => {
 
 const parseOpenAiResponseToEnvelope = (payload: unknown): StructuredIntentEnvelope => {
   const record = payload as Record<string, unknown>;
-  const outputText =
-    typeof record.output_text === "string"
-      ? record.output_text
-      : Array.isArray(record.output)
-        ? JSON.stringify(record.output)
-        : null;
+  const flattenText = (value: unknown): string[] => {
+    if (typeof value === "string") {
+      return [value];
+    }
+    if (Array.isArray(value)) {
+      return value.flatMap(flattenText);
+    }
+    if (!value || typeof value !== "object") {
+      return [];
+    }
+    const obj = value as Record<string, unknown>;
+    const direct = [
+      ...(typeof obj.text === "string" ? [obj.text] : []),
+      ...(typeof obj.output_text === "string" ? [obj.output_text] : []),
+      ...(typeof obj.content === "string" ? [obj.content] : []),
+    ];
+    const nestedKeys = ["output", "content", "parts", "messages"];
+    return direct.concat(nestedKeys.flatMap((key) => flattenText(obj[key])));
+  };
+  const tryParseJsonFromText = (text: string): unknown | null => {
+    const trimmed = text.trim();
+    try {
+      return JSON.parse(trimmed);
+    } catch {
+      const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+      if (fenced) {
+        try {
+          return JSON.parse(fenced[1]);
+        } catch {
+          // ignore
+        }
+      }
+      const objMatch = trimmed.match(/\{[\s\S]*\}/);
+      if (objMatch) {
+        try {
+          return JSON.parse(objMatch[0]);
+        } catch {
+          // ignore
+        }
+      }
+      return null;
+    }
+  };
+
+  const textCandidates = [
+    ...(typeof record.output_text === "string" ? [record.output_text] : []),
+    ...flattenText(record.output),
+  ].filter((value, index, array) => !!value && array.indexOf(value) === index);
+  const parsedJson =
+    textCandidates.map((text) => ({ text, parsed: tryParseJsonFromText(text) })).find((item) => item.parsed !== null) ?? null;
+  const outputText = parsedJson?.text ?? textCandidates[0] ?? null;
   if (!outputText) {
     throw new Error("OpenAI response missing output text");
   }
   return {
-    ...normalizeEnvelopeShape(JSON.parse(outputText)),
+    ...normalizeEnvelopeShape(parsedJson?.parsed ?? JSON.parse(outputText)),
     meta: {
       rawResponsePreview: outputText.slice(0, 600),
     },

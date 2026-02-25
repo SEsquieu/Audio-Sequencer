@@ -1,4 +1,5 @@
-import { PatchMeta } from "../../types/song";
+import { createFxInstance } from "../../audio/fx/types";
+import { PatchMeta, SongState, SynthPattern } from "../../types/song";
 import { CompiledDiffCandidate, DiffPlanCandidate } from "./types";
 import { collectAffectedPaths, summarizePatchOps } from "./summarize";
 
@@ -15,19 +16,238 @@ const normalizeOps = (ops: PatchMeta["ops"]): PatchMeta["ops"] => {
   return next;
 };
 
-export const compileDiffPlanCandidate = (plan: DiffPlanCandidate): CompiledDiffCandidate | null => {
-  const patchAction = plan.actions.find((action) => action.type === "json_patch");
-  if (!patchAction) {
-    return null;
+export const compileDiffPlanCandidate = (plan: DiffPlanCandidate, song: SongState): CompiledDiffCandidate | null => {
+  const warnings: string[] = [];
+  const findTrackIndex = (trackId: string) => song.tracks.findIndex((track) => track.id === trackId);
+
+  const compiledOps: PatchMeta["ops"] = [];
+  let firstAuditionBars: number[] | undefined;
+  let actionLabel: string | undefined;
+  let actionExplanation: string | undefined;
+
+  for (let i = 0; i < plan.actions.length; i += 1) {
+    const action = plan.actions[i];
+    if (!actionLabel && "label" in action) {
+      actionLabel = action.label;
+    }
+    if (!actionExplanation && "explanation" in action) {
+      actionExplanation = action.explanation;
+    }
+    if (action.type === "json_patch") {
+      compiledOps.push(...action.ops);
+      if (!firstAuditionBars && action.auditionBars) {
+        firstAuditionBars = action.auditionBars;
+      }
+      continue;
+    }
+    if (action.type === "set_track_param") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for set_track_param (${action.trackId})`);
+        continue;
+      }
+      compiledOps.push({
+        op: "replace",
+        path: `/tracks/${trackIndex}/instrument/${action.param}`,
+        value: action.value,
+      });
+      continue;
+    }
+    if (action.type === "set_track_send") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for set_track_send (${action.trackId})`);
+        continue;
+      }
+      compiledOps.push({
+        op: "replace",
+        path: `/tracks/${trackIndex}/send/${action.send}`,
+        value: action.value,
+      });
+      continue;
+    }
+    if (action.type === "route_track_send_bus") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for route_track_send_bus (${action.trackId})`);
+        continue;
+      }
+      const key = action.bus === "delay" ? "delayBus" : "reverbBus";
+      compiledOps.push({
+        op: "replace",
+        path: `/tracks/${trackIndex}/send/${key}`,
+        value: action.value,
+      });
+      continue;
+    }
+    if (action.type === "add_track_insert_fx") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for add_track_insert_fx (${action.trackId})`);
+        continue;
+      }
+      compiledOps.push({
+        op: "add",
+        path: `/tracks/${trackIndex}/insertFx/-`,
+        value: createFxInstance(action.fxType, `${plan.id}-fx-${i}`),
+      });
+      continue;
+    }
+    if (action.type === "set_track_insert_fx_param") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for set_track_insert_fx_param (${action.trackId})`);
+        continue;
+      }
+      const fxList = song.tracks[trackIndex]?.insertFx ?? [];
+      const fxIndex =
+        (action.fxId ? fxList.findIndex((fx) => fx.id === action.fxId) : -1) >= 0
+          ? fxList.findIndex((fx) => fx.id === action.fxId)
+          : action.fxType
+            ? fxList.findIndex((fx) => fx.type === action.fxType)
+            : -1;
+      if (fxIndex < 0) {
+        warnings.push(
+          `Insert FX not found for set_track_insert_fx_param (${action.trackId}, ${action.fxId ?? action.fxType ?? "?"})`
+        );
+        continue;
+      }
+      const fx = fxList[fxIndex];
+      if (!(action.param in (fx.params as unknown as Record<string, unknown>))) {
+        warnings.push(`FX param not found (${fx.type}.${action.param})`);
+        continue;
+      }
+      compiledOps.push({
+        op: "replace",
+        path: `/tracks/${trackIndex}/insertFx/${fxIndex}/params/${action.param}`,
+        value: action.value,
+      });
+      continue;
+    }
+    if (action.type === "set_drum_step") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for set_drum_step (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "drums") {
+        warnings.push(`Track is not drums for set_drum_step (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for set_drum_step (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for set_drum_step`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "drums") {
+        warnings.push(`Drum pattern not found (${patternId})`);
+        continue;
+      }
+      if (action.stepIndex < 0 || action.stepIndex >= pattern.steps.length) {
+        warnings.push(`Step index out of range for set_drum_step (${action.stepIndex})`);
+        continue;
+      }
+      if (!["kick", "snare", "hat"].includes(action.lane)) {
+        warnings.push(`Invalid drum lane for set_drum_step (${String(action.lane)})`);
+        continue;
+      }
+      compiledOps.push({
+        op: "replace",
+        path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${action.stepIndex}/${action.lane}`,
+        value: Math.max(0, Math.min(1, Number.isFinite(action.value) ? action.value : 0)),
+      });
+      continue;
+    }
+    if (action.type === "transpose_track_bar_notes") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for transpose_track_bar_notes (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "synth") {
+        warnings.push(`Track is not synth for transpose_track_bar_notes (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for transpose_track_bar_notes (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for transpose_track_bar_notes`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "synth") {
+        warnings.push(`Synth pattern not found (${patternId})`);
+        continue;
+      }
+      const synthPattern = pattern as SynthPattern;
+      const clampMin = Number.isFinite(action.clampMin) ? action.clampMin! : 0;
+      const clampMax = Number.isFinite(action.clampMax) ? action.clampMax! : 127;
+      let noteCount = 0;
+      for (let stepIndex = 0; stepIndex < synthPattern.steps.length; stepIndex += 1) {
+        const cell = synthPattern.steps[stepIndex];
+        for (let noteIndex = 0; noteIndex < cell.length; noteIndex += 1) {
+          const note = cell[noteIndex];
+          const nextPitch = Math.max(clampMin, Math.min(clampMax, Math.round(note.pitch + action.semitones)));
+          if (nextPitch === note.pitch) {
+            continue;
+          }
+          compiledOps.push({
+            op: "replace",
+            path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${noteIndex}/pitch`,
+            value: nextPitch,
+          });
+          noteCount += 1;
+        }
+      }
+      if (noteCount === 0) {
+        warnings.push(`No synth notes changed for transpose_track_bar_notes (${patternId})`);
+      }
+      continue;
+    }
+    if (action.type === "copy_track_bar_assignment") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for copy_track_bar_assignment (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (
+        action.fromBarIndex < 0 ||
+        action.fromBarIndex >= track.lane.length ||
+        action.toBarIndex < 0 ||
+        action.toBarIndex >= track.lane.length
+      ) {
+        warnings.push(
+          `Bar index out of range for copy_track_bar_assignment (${action.fromBarIndex} -> ${action.toBarIndex})`
+        );
+        continue;
+      }
+      compiledOps.push({
+        op: "replace",
+        path: `/tracks/${trackIndex}/lane/${action.toBarIndex}`,
+        value: track.lane[action.fromBarIndex],
+      });
+      continue;
+    }
   }
 
-  const ops = normalizeOps(patchAction.ops);
+  const ops = normalizeOps(compiledOps);
   if (ops.length === 0) {
     return null;
   }
 
-  const label = patchAction.label ?? plan.label ?? "AI Patch";
-  const explanation = patchAction.explanation ?? plan.explanation ?? summarizePatchOps(ops);
+  const label = actionLabel ?? plan.label ?? "AI Patch";
+  const explanation = actionExplanation ?? plan.explanation ?? summarizePatchOps(ops);
   const affectedPaths = collectAffectedPaths(ops);
 
   return {
@@ -37,13 +257,12 @@ export const compileDiffPlanCandidate = (plan: DiffPlanCandidate): CompiledDiffC
       label,
       explanation,
       ops,
-      auditionBars: patchAction.auditionBars,
+      auditionBars: firstAuditionBars,
     },
     source: plan.source,
     confidence: plan.confidence ?? 0.5,
     affectedPaths,
-    warnings: [],
+    warnings,
     opCount: ops.length,
   };
 };
-

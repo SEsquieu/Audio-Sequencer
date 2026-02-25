@@ -1,4 +1,4 @@
-import { createFxInstance, FxType } from "../../audio/fx/types";
+import { clamp01, createFxInstance, FxType } from "../../audio/fx/types";
 import { DelayBusTargetId, JsonPatchOp, ReverbBusTargetId, SongState } from "../../types/song";
 import { DiffEngineRequest, DiffPlanCandidate } from "./types";
 
@@ -123,6 +123,51 @@ const parseFxType = (text: string): FxType | null => {
   }
   return null;
 };
+
+const parseFxParamValue = (fxType: FxType, param: string, raw: string): number | string | null => {
+  if (fxType === "chorus") {
+    if (param === "rate") {
+      const v = Number(raw.replace("%", ""));
+      return Number.isFinite(v) ? clamp(v, 0.01, 8) : null;
+    }
+    if (param === "depth" || param === "mix") {
+      const v = parsePercentOrUnit(raw);
+      return Number.isFinite(v) ? clamp01(v) : null;
+    }
+  }
+  if (fxType === "djFilter") {
+    if (param === "mode") {
+      if (/^hp|high ?pass$/.test(raw)) return "hp";
+      if (/^lp|low ?pass$/.test(raw)) return "lp";
+      return null;
+    }
+    if (param === "cutoff" || param === "q") {
+      const v = parsePercentOrUnit(raw);
+      return Number.isFinite(v) ? clamp01(v) : null;
+    }
+  }
+  if (fxType === "saturator") {
+    if (param === "drive" || param === "mix") {
+      const v = parsePercentOrUnit(raw);
+      return Number.isFinite(v) ? clamp01(v) : null;
+    }
+    if (param === "output") {
+      const v = parsePercentOrUnit(raw);
+      return Number.isFinite(v) ? clamp(v, 0, 2) : null;
+    }
+  }
+  if (fxType === "eq3") {
+    if (param === "low" || param === "mid" || param === "high") {
+      const v = Number(raw.replace("db", "").replace("%", "").trim());
+      if (!Number.isFinite(v)) return null;
+      return raw.includes("%") ? clamp((v / 100) * 24, -24, 24) : clamp(v, -24, 24);
+    }
+  }
+  return null;
+};
+
+const findTrackFxIndex = (song: SongState, trackIndex: number, fxType: FxType): number =>
+  song.tracks[trackIndex]?.insertFx.findIndex((fx) => fx.type === fxType) ?? -1;
 
 export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPlanCandidate[] => {
   const text = norm(request.prompt);
@@ -281,6 +326,39 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
           )
         );
         return candidates;
+      }
+    }
+
+    match = text.match(/^(?:set )?(chorus|dj ?filter|djfilter|saturator|eq3|eq)\s+(mix|rate|depth|cutoff|q|mode|drive|output|low|mid|high)\s+([a-z0-9.% -]+?)(?:\s+(?:on|to)\s+.+)?$/);
+    if (match) {
+      const fxType = parseFxType(match[1]);
+      const rawParam = match[2];
+      const param =
+        fxType === "djFilter" && rawParam === "q"
+          ? "q"
+          : rawParam;
+      if (fxType) {
+        const fxIndex = findTrackFxIndex(song, trackIndex, fxType);
+        if (fxIndex >= 0) {
+          const parsedValue = parseFxParamValue(fxType, param, match[3].trim());
+          if (parsedValue !== null) {
+            candidates.push(
+              wrapPatchCandidate(
+                `Set ${track.name} ${fxType} ${param}`,
+                `Set ${track.name} ${fxType} ${param}`,
+                [
+                  {
+                    op: "replace",
+                    path: `/tracks/${trackIndex}/insertFx/${fxIndex}/params/${param}`,
+                    value: parsedValue,
+                  },
+                ],
+                0.97
+              )
+            );
+            return candidates;
+          }
+        }
       }
     }
   }
