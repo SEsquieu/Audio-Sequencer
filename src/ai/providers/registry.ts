@@ -1,4 +1,6 @@
 import { createOllamaIntentProvider, getOllamaProviderDescriptor } from "./ollama";
+import { hasStoredProviderApiKey } from "./keys";
+import { createOpenAiIntentProvider, getOpenAiProviderDescriptor } from "./openai";
 import { AiIntentProvider, AiProviderDescriptor, AiProviderId } from "./types";
 
 const STATIC_PROVIDER_DESCRIPTORS: AiProviderDescriptor[] = [
@@ -33,21 +35,7 @@ const STATIC_PROVIDER_DESCRIPTORS: AiProviderDescriptor[] = [
     availability: "available",
   },
   getOllamaProviderDescriptor(),
-  {
-    id: "user-api-openai",
-    kind: "user_api",
-    label: "OpenAI (User API Key)",
-    authMode: "user_api_key",
-    latencyClass: "medium",
-    costClass: "medium",
-    enabledByDefault: false,
-    capabilities: {
-      structuredOutput: true,
-      streaming: true,
-      supportedTaskTypes: ["sound_edit", "fx_routing", "pattern_edit", "arrangement_edit", "creative_transform"],
-    },
-    availability: "unknown",
-  },
+  getOpenAiProviderDescriptor(),
   {
     id: "user-api-anthropic",
     kind: "user_api",
@@ -81,7 +69,25 @@ const STATIC_PROVIDER_DESCRIPTORS: AiProviderDescriptor[] = [
 ];
 
 export const listAiProviderDescriptors = (): AiProviderDescriptor[] =>
-  STATIC_PROVIDER_DESCRIPTORS.map((provider) => ({ ...provider }));
+  STATIC_PROVIDER_DESCRIPTORS.map((provider) => {
+    if (provider.id === "user-api-openai") {
+      const hasKey = hasStoredProviderApiKey("user-api-openai");
+      return {
+        ...provider,
+        availability: hasKey ? "unknown" : "unavailable",
+        unavailableReason: hasKey ? undefined : "API key required",
+      };
+    }
+    if (provider.id === "user-api-anthropic") {
+      const hasKey = hasStoredProviderApiKey("user-api-anthropic");
+      return {
+        ...provider,
+        availability: hasKey ? "unknown" : "unavailable",
+        unavailableReason: hasKey ? undefined : "API key required",
+      };
+    }
+    return { ...provider };
+  });
 
 export const getAiProviderDescriptor = (id: AiProviderId): AiProviderDescriptor | null =>
   STATIC_PROVIDER_DESCRIPTORS.find((provider) => provider.id === id) ?? null;
@@ -90,6 +96,16 @@ export const createAiIntentProvider = (id: AiProviderId): AiIntentProvider | nul
   if (id === "ollama-local") {
     return createOllamaIntentProvider();
   }
+  if (id === "user-api-openai") {
+    return createOpenAiIntentProvider();
+  }
   return null;
 };
 
+export const probeAiProviderHealth = async (id: AiProviderId) => {
+  const provider = createAiIntentProvider(id);
+  if (!provider) {
+    return null;
+  }
+  return provider.healthCheck();
+};

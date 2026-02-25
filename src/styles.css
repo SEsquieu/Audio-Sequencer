@@ -2378,6 +2378,29 @@ input[type="range"] {
   margin: -0.15rem 0 0.55rem;
 }
 
+.ai-guardrail-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin: -0.05rem 0 0.55rem;
+}
+
+.ai-guardrail-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #1f3b2c;
+  border-radius: 0.42rem;
+  background: #040b08;
+  color: #c8ead6;
+  padding: 0.35rem 0.45rem;
+  font-size: 0.74rem;
+}
+
+.ai-guardrail-row input[type="checkbox"] {
+  margin: 0;
+}
+
 .ai-provider-select {
   width: 100%;
   border: 1px solid #1f3b2c;
@@ -2385,6 +2408,57 @@ input[type="range"] {
   color: #ecfdf5;
   border-radius: 0.42rem;
   padding: 0.38rem 0.52rem;
+}
+
+.ai-provider-status-list {
+  display: grid;
+  gap: 0.3rem;
+  margin: -0.1rem 0 0.55rem;
+}
+
+.ai-provider-status-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  border: 1px solid #1f3b2c;
+  border-radius: 0.42rem;
+  background: #050d09;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+  color: #b9d8c7;
+}
+
+.ai-provider-status-item .ok {
+  color: #86efac;
+}
+
+.ai-provider-status-item .warn {
+  color: #fcd34d;
+}
+
+.ai-provider-key-panel {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0 0 0.6rem;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid #1f3b2c;
+  border-radius: 0.45rem;
+  background: #030906;
+}
+
+.ai-provider-key-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.4rem;
+}
+
+.ai-provider-key-input {
+  min-width: 0;
+  border: 1px solid #1f3b2c;
+  background: #000000;
+  color: #ecfdf5;
+  border-radius: 0.42rem;
+  padding: 0.38rem 0.5rem;
 }
 
 .ai-loading-state {
@@ -2493,6 +2567,31 @@ input[type="range"] {
   color: #b9d8c7;
   font-size: 0.8rem;
   line-height: 1.35;
+}
+
+.candidate-meta-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.45rem;
+  margin: 0 0 0.45rem;
+  color: #9ec8b0;
+  font-size: 0.7rem;
+}
+
+.candidate-path-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  margin: 0 0 0.55rem;
+}
+
+.candidate-path-list code {
+  border: 1px solid #1f3b2c;
+  border-radius: 0.35rem;
+  background: #050c09;
+  color: #d7ffee;
+  padding: 0.14rem 0.28rem;
+  font-size: 0.67rem;
 }
 
 .candidate-actions {

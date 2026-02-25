@@ -12,8 +12,10 @@ import {
   useState,
 } from "react";
 import { aiProposePatchDetailedAsync } from "./ai/aiProposePatch";
-import { listAiProviderDescriptors } from "./ai/providers/registry";
+import { listAiProviderDescriptors, probeAiProviderHealth } from "./ai/providers/registry";
+import { getStoredProviderApiKey, hasStoredProviderApiKey, setStoredProviderApiKey } from "./ai/providers/keys";
 import { getStoredAiProviderPreference, setStoredAiProviderPreference } from "./ai/providers/router";
+import type { AiProviderDescriptor, AiProviderId } from "./ai/providers/types";
 import type { DiffEngineDiagnostics } from "./ai/diffEngine/types";
 import { AudioEngine, getEffectiveLoopBars } from "./audio/engine";
 import { FxType, createFxInstance, FxInstance } from "./audio/fx/types";
@@ -131,6 +133,72 @@ const nextPatternIdFromRecord = (patterns: Record<string, unknown>): string => {
   }
   return String(candidate);
 };
+
+const isAiOpLiveSafe = (op: JsonPatchOp): boolean => {
+  if (op.op !== "replace") {
+    return false;
+  }
+  const path = op.path;
+  if (/^\/tracks\/\d+\/instrument\/[^/]+$/.test(path)) {
+    return true;
+  }
+  if (/^\/tracks\/\d+\/send\/[^/]+$/.test(path)) {
+    return true;
+  }
+  if (/^\/tracks\/\d+\/insertFx\/\d+\/(enabled|params)(?:\/.*)?$/.test(path)) {
+    return true;
+  }
+  if (/^\/masterFx\/\d+\/(enabled|params)(?:\/.*)?$/.test(path)) {
+    return true;
+  }
+  if (/^\/sendFx\/(delay|reverb)\/[^/]+$/.test(path)) {
+    return true;
+  }
+  if (/^\/masterSafety\/(enabled|amount)$/.test(path)) {
+    return true;
+  }
+  if (/^\/performance\/ecoMode$/.test(path)) {
+    return true;
+  }
+  if (/^\/(tempo|swing)$/.test(path)) {
+    return true;
+  }
+  return false;
+};
+
+const getPatchedTrackIndices = (patch: PatchMeta): number[] => {
+  const indices = new Set<number>();
+  for (const op of patch.ops) {
+    const match = op.path.match(/^\/tracks\/(\d+)\b/);
+    if (match) {
+      indices.add(Number(match[1]));
+    }
+  }
+  return Array.from(indices);
+};
+
+const isAiPatchLiveSafe = (patch: PatchMeta): boolean => patch.ops.every(isAiOpLiveSafe);
+
+const isAiPatchInSelectedTrackScope = (patch: PatchMeta, selectedTrackIndex: number | null): boolean => {
+  if (selectedTrackIndex === null) {
+    return true;
+  }
+  const touchedTracks = getPatchedTrackIndices(patch);
+  if (touchedTracks.length === 0) {
+    return true;
+  }
+  return touchedTracks.every((index) => index === selectedTrackIndex);
+};
+
+const formatPatchPath = (path: string): string =>
+  path
+    .replace(/^\/tracks\/(\d+)\//, "track[$1].")
+    .replace(/^\/masterFx\//, "masterFx.")
+    .replace(/^\/sendFx\//, "sendFx.")
+    .replace(/^\/masterSafety\//, "masterSafety.")
+    .replace(/^\/performance\//, "performance.")
+    .replace(/^\//, "")
+    .replace(/\//g, ".");
 
 const createEmptySynthSteps = (): SynthStep[][] => Array.from({ length: 16 }, () => []);
 const createEmptyDrumSteps = () => Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
@@ -442,6 +510,12 @@ function App() {
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiProviderPreference, setAiProviderPreferenceState] = useState<string | "auto">(() => getStoredAiProviderPreference());
   const [aiDiagnostics, setAiDiagnostics] = useState<DiffEngineDiagnostics | null>(null);
+  const [aiSelectedTrackOnly, setAiSelectedTrackOnly] = useState(true);
+  const [aiLiveSafeWhilePlaying, setAiLiveSafeWhilePlaying] = useState(true);
+  const [aiProviderDescriptors, setAiProviderDescriptors] = useState<AiProviderDescriptor[]>(() => listAiProviderDescriptors());
+  const [openAiApiKeyDraft, setOpenAiApiKeyDraft] = useState(() => getStoredProviderApiKey("user-api-openai"));
+  const [hasOpenAiApiKey, setHasOpenAiApiKey] = useState(() => hasStoredProviderApiKey("user-api-openai"));
+  const [aiProviderHealth, setAiProviderHealth] = useState<Partial<Record<AiProviderId, { ok: boolean; reason?: string }>>>({});
   const aiRequestSeqRef = useRef(0);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
@@ -604,6 +678,20 @@ function App() {
 
   const safeTrackIndex = Math.min(selectedTrack, Math.max(0, song.tracks.length - 1));
   const track = song.tracks[safeTrackIndex] ?? song.tracks[0];
+  const filteredCandidates = useMemo(() => {
+    const selectedTrackIndex =
+      track?.id != null ? committedSong.tracks.findIndex((t) => t.id === track.id) : -1;
+    const selectedIndexOrNull = selectedTrackIndex >= 0 ? selectedTrackIndex : null;
+    return candidates.filter((candidate) => {
+      if (aiSelectedTrackOnly && !isAiPatchInSelectedTrackScope(candidate, selectedIndexOrNull)) {
+        return false;
+      }
+      if (aiLiveSafeWhilePlaying && isPlaying && !isAiPatchLiveSafe(candidate)) {
+        return false;
+      }
+      return true;
+    });
+  }, [aiLiveSafeWhilePlaying, aiSelectedTrackOnly, candidates, committedSong.tracks, isPlaying, track?.id]);
   const patternId = track?.lane[selectedBar] ?? track?.lane[0];
   const pattern = patternId ? track?.patterns[patternId] : undefined;
   const playheadPatternId = track?.lane[playhead.bar] ?? track?.lane[0];
@@ -1613,6 +1701,43 @@ function App() {
     }
   };
 
+  useEffect(() => {
+    setAiProviderDescriptors(listAiProviderDescriptors());
+  }, [openAiApiKeyDraft]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const run = async () => {
+      const providers = listAiProviderDescriptors();
+      const probeTargets = providers
+        .filter((provider) => provider.id === "ollama-local" || provider.id === "user-api-openai")
+        .filter((provider) => provider.availability !== "unavailable")
+        .map((provider) => provider.id);
+      const results = await Promise.all(
+        probeTargets.map(async (providerId) => ({
+          providerId,
+          health: await probeAiProviderHealth(providerId),
+        }))
+      );
+      if (cancelled) {
+        return;
+      }
+      setAiProviderHealth((prev) => {
+        const next = { ...prev };
+        for (const result of results) {
+          if (result.health) {
+            next[result.providerId] = { ok: result.health.ok, reason: result.health.reason };
+          }
+        }
+        return next;
+      });
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [openAiApiKeyDraft, isAiOpen]);
+
   const cancelAiGeneration = () => {
     aiAbortControllerRef.current?.abort();
     aiAbortControllerRef.current = null;
@@ -1623,6 +1748,12 @@ function App() {
     const nextValue = value === "auto" ? "auto" : value;
     setAiProviderPreferenceState(nextValue);
     setStoredAiProviderPreference(nextValue);
+  };
+
+  const onOpenAiApiKeySave = () => {
+    setStoredProviderApiKey("user-api-openai", openAiApiKeyDraft);
+    setHasOpenAiApiKey(hasStoredProviderApiKey("user-api-openai"));
+    setAiProviderDescriptors(listAiProviderDescriptors());
   };
 
   const onSubmitPrompt = (event: FormEvent) => {
@@ -4063,7 +4194,7 @@ function App() {
             Track: <strong>{track?.name ?? "None"}</strong>
           </span>
           <span>
-            {candidates.length} proposal{candidates.length === 1 ? "" : "s"}
+            {filteredCandidates.length} proposal{filteredCandidates.length === 1 ? "" : "s"}
           </span>
         </div>
 
@@ -4128,13 +4259,86 @@ function App() {
             disabled={isAiGenerating}
           >
             <option value="auto">Auto</option>
-            {listAiProviderDescriptors().map((provider) => (
-              <option key={provider.id} value={provider.id}>
+            {aiProviderDescriptors.map((provider) => (
+              <option
+                key={provider.id}
+                value={provider.id}
+                disabled={provider.availability === "unavailable" && provider.authMode !== "user_api_key"}
+              >
                 {provider.label}
+                {provider.availability === "unavailable"
+                  ? provider.authMode === "user_api_key"
+                    ? " (Needs API Key)"
+                    : " (Unavailable)"
+                  : ""}
               </option>
             ))}
           </select>
         </div>
+
+        <div className="ai-guardrail-row">
+          <label>
+            <input
+              type="checkbox"
+              checked={aiSelectedTrackOnly}
+              onChange={(e) => setAiSelectedTrackOnly(e.target.checked)}
+            />
+            Selected Track Only
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={aiLiveSafeWhilePlaying}
+              onChange={(e) => setAiLiveSafeWhilePlaying(e.target.checked)}
+            />
+            Live-Safe While Playing
+          </label>
+        </div>
+
+        <div className="ai-provider-status-list">
+          {aiProviderDescriptors
+            .filter((provider) => provider.id === "ollama-local" || provider.id === "user-api-openai")
+            .map((provider) => {
+              const health = aiProviderHealth[provider.id];
+              const statusLabel =
+                provider.availability === "unavailable"
+                  ? provider.unavailableReason ?? "Unavailable"
+                  : health
+                    ? health.ok
+                      ? "Ready"
+                      : `Issue: ${health.reason ?? "Unreachable"}`
+                    : "Checking…";
+              return (
+                <div key={provider.id} className="ai-provider-status-item">
+                  <span>{provider.label}</span>
+                  <span className={health?.ok ? "ok" : provider.availability === "unavailable" ? "warn" : ""}>{statusLabel}</span>
+                </div>
+              );
+            })}
+        </div>
+
+        {aiProviderPreference === "user-api-openai" && !hasOpenAiApiKey && (
+          <div className="ai-provider-key-panel">
+            <label className="ai-form-label" htmlFor="openai-api-key-input">
+              OpenAI API Key (local only)
+            </label>
+            <div className="ai-provider-key-row">
+              <input
+                id="openai-api-key-input"
+                className="ai-provider-key-input"
+                type="password"
+                value={openAiApiKeyDraft}
+                onChange={(e) => setOpenAiApiKeyDraft(e.target.value)}
+                placeholder="sk-..."
+                autoComplete="off"
+                spellCheck={false}
+              />
+              <button type="button" onClick={onOpenAiApiKeySave} disabled={isAiGenerating}>
+                Save
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="candidate-list">
           {isAiGenerating && (
@@ -4150,16 +4354,38 @@ function App() {
               {aiDiagnostics.usedFallback && <span>Fallback: {aiDiagnostics.fallbackReason ?? "Yes"}</span>}
             </div>
           )}
-          {candidates.length === 0 && !isAiGenerating && (
-            <div className="ai-empty-state">No proposals yet. Use a quick prompt or write your own.</div>
+          {filteredCandidates.length === 0 && !isAiGenerating && (
+            <div className="ai-empty-state">
+              {candidates.length > 0
+                ? "No proposals match the current AI filters. Toggle Selected Track Only or Live-Safe While Playing."
+                : "No proposals yet. Use a quick prompt or write your own."}
+            </div>
           )}
-          {candidates.map((candidate, idx) => (
+          {filteredCandidates.map((candidate, idx) => {
+            const affectedPaths = Array.from(new Set(candidate.ops.map((op) => op.path))).slice(0, 4);
+            const touchedTracks = getPatchedTrackIndices(candidate);
+            return (
             <article key={candidate.id} className="candidate-card">
               <div className="candidate-head">
                 <h3>{candidate.label}</h3>
                 <span className="candidate-tag">Option {idx + 1}</span>
               </div>
               <p>{candidate.explanation}</p>
+              <div className="candidate-meta-row">
+                <span>{isAiPatchLiveSafe(candidate) ? "Live-safe" : "Structural/heavy"}</span>
+                <span>
+                  {touchedTracks.length > 0
+                    ? `Tracks: ${touchedTracks.map((n) => n + 1).join(", ")}`
+                    : "Global"}
+                </span>
+              </div>
+              {affectedPaths.length > 0 && (
+                <div className="candidate-path-list" aria-label="Affected paths">
+                  {affectedPaths.map((path) => (
+                    <code key={`${candidate.id}-${path}`}>{formatPatchPath(path)}</code>
+                  ))}
+                </div>
+              )}
               <div className="candidate-actions">
                 <button type="button" onClick={() => auditionToggle(candidate)}>
                   {auditionPatchId === candidate.id ? "Stop" : "Audition"}
@@ -4172,7 +4398,8 @@ function App() {
                 </button>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       </section>
     </div>

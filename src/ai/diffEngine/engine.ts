@@ -157,10 +157,10 @@ export const proposeDiffPatchCandidatesAsyncDetailed = async (request: DiffEngin
     };
   };
 
-  if (route.selectedProviderId === "ollama-local") {
+  if (route.selectedProviderId === "ollama-local" || route.selectedProviderId === "user-api-openai") {
     const { signal, cleanup } = withTimeoutSignal(request.signal, request.timeoutMs ?? 10000);
     try {
-      const provider = createAiIntentProvider("ollama-local");
+      const provider = createAiIntentProvider(route.selectedProviderId);
       if (provider?.generateStructuredIntents) {
         const envelope = await provider.generateStructuredIntents({
           prompt: request.prompt,
