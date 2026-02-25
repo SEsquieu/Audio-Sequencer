@@ -67,6 +67,29 @@ export interface AiPromptTrackContext {
   id: string;
   name: string;
   type: "synth" | "drums";
+  currentBarPattern?: {
+    barIndex: number;
+    patternId: string | null;
+    type: "synth" | "drums";
+    summary:
+      | {
+          activeSteps: number[];
+          noteCount: number;
+          pitchMin?: number;
+          pitchMax?: number;
+        }
+      | {
+          kickSteps: number[];
+          snareSteps: number[];
+          hatSteps: number[];
+        };
+  };
+  insertFx?: Array<{
+    id: string;
+    type: string;
+    enabled: boolean;
+    params?: Record<string, number | string | boolean>;
+  }>;
 }
 
 export interface AiPromptContext {
@@ -76,6 +99,8 @@ export interface AiPromptContext {
   selectedBar?: number;
   trackNames: string[];
   tracks: AiPromptTrackContext[];
+  selectedTrackInsertFx?: AiPromptTrackContext["insertFx"];
+  selectedTrackCurrentBarPattern?: AiPromptTrackContext["currentBarPattern"];
   supportedCanonicalCommands?: string[];
 }
 

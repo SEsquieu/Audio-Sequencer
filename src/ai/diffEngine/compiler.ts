@@ -239,6 +239,92 @@ export const compileDiffPlanCandidate = (plan: DiffPlanCandidate, song: SongStat
       });
       continue;
     }
+    if (action.type === "rotate_track_bar_assignments") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for rotate_track_bar_assignments (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      const start = Math.min(action.fromBarIndex, action.toBarIndex);
+      const end = Math.max(action.fromBarIndex, action.toBarIndex);
+      if (start < 0 || end >= track.lane.length) {
+        warnings.push(`Bar index out of range for rotate_track_bar_assignments (${start}-${end})`);
+        continue;
+      }
+      const segment = track.lane.slice(start, end + 1);
+      if (segment.length <= 1) {
+        warnings.push("Rotate range too small for rotate_track_bar_assignments");
+        continue;
+      }
+      const rotation = ((Math.round(action.steps) % segment.length) + segment.length) % segment.length;
+      if (rotation === 0) {
+        warnings.push("No-op rotation for rotate_track_bar_assignments");
+        continue;
+      }
+      const rotated = segment.slice(segment.length - rotation).concat(segment.slice(0, segment.length - rotation));
+      for (let offset = 0; offset < rotated.length; offset += 1) {
+        if (rotated[offset] === track.lane[start + offset]) {
+          continue;
+        }
+        compiledOps.push({
+          op: "replace",
+          path: `/tracks/${trackIndex}/lane/${start + offset}`,
+          value: rotated[offset],
+        });
+      }
+      continue;
+    }
+    if (action.type === "set_synth_step_notes_field") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for set_synth_step_notes_field (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "synth") {
+        warnings.push(`Track is not synth for set_synth_step_notes_field (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for set_synth_step_notes_field (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for set_synth_step_notes_field`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "synth") {
+        warnings.push(`Synth pattern not found (${patternId})`);
+        continue;
+      }
+      if (action.stepIndex < 0 || action.stepIndex >= pattern.steps.length) {
+        warnings.push(`Step index out of range for set_synth_step_notes_field (${action.stepIndex})`);
+        continue;
+      }
+      const cell = pattern.steps[action.stepIndex];
+      if (!Array.isArray(cell) || cell.length === 0) {
+        warnings.push(`No synth notes at step ${action.stepIndex + 1} for set_synth_step_notes_field`);
+        continue;
+      }
+      const nextValue =
+        action.field === "velocity"
+          ? Math.max(0, Math.min(1, Number.isFinite(action.value) ? action.value : 0))
+          : Math.max(1, Math.min(16, Math.round(action.value)));
+      for (let noteIndex = 0; noteIndex < cell.length; noteIndex += 1) {
+        if (cell[noteIndex][action.field] === nextValue) {
+          continue;
+        }
+        compiledOps.push({
+          op: "replace",
+          path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${action.stepIndex}/${noteIndex}/${action.field}`,
+          value: nextValue,
+        });
+      }
+      continue;
+    }
   }
 
   const ops = normalizeOps(compiledOps);

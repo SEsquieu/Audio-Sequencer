@@ -86,6 +86,27 @@ interface CopyTrackBarAssignmentIntent {
   note?: string;
 }
 
+interface RotateTrackBarAssignmentsIntent {
+  type: "rotate_track_bar_assignments";
+  track?: string;
+  fromBarIndex?: number;
+  toBarIndex?: number;
+  steps?: number;
+  confidence?: number;
+  note?: string;
+}
+
+interface SetSynthStepNotesFieldIntent {
+  type: "set_synth_step_notes_field";
+  track?: string;
+  barIndex?: number;
+  stepIndex?: number;
+  field?: "velocity" | "length";
+  value?: number;
+  confidence?: number;
+  note?: string;
+}
+
 type ProviderIntentLike =
   | CanonicalCommandIntent
   | SetTrackGainIntent
@@ -96,6 +117,8 @@ type ProviderIntentLike =
   | SetDrumStepIntent
   | TransposeTrackBarNotesIntent
   | CopyTrackBarAssignmentIntent
+  | RotateTrackBarAssignmentsIntent
+  | SetSynthStepNotesFieldIntent
   | string
   | {
       type?: string;
@@ -421,6 +444,43 @@ const toCanonicalCommand = (value: unknown, request: DiffEngineRequest): Canonic
     }
   }
 
+  if (type === "rotate_track_bar_assignments") {
+    const intent = raw as unknown as RotateTrackBarAssignmentsIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (
+      typeof intent.fromBarIndex === "number" &&
+      typeof intent.toBarIndex === "number" &&
+      typeof intent.steps === "number"
+    ) {
+      return {
+        type: "canonical_command",
+        command: `rotate ${track} bars ${Math.round(intent.fromBarIndex + 1)}-${Math.round(intent.toBarIndex + 1)} by ${Math.round(
+          intent.steps
+        )}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
+  if (type === "set_synth_step_notes_field") {
+    const intent = raw as unknown as SetSynthStepNotesFieldIntent;
+    const track = resolveTrackName(request, intent.track);
+    if ((intent.field === "velocity" || intent.field === "length") && typeof intent.stepIndex === "number") {
+      const val =
+        intent.field === "velocity"
+          ? `${Math.round(clamp01(typeof intent.value === "number" ? intent.value : 1) * 100)}%`
+          : `${Math.max(1, Math.min(16, Math.round(typeof intent.value === "number" ? intent.value : 1)))}`;
+      const maybeBar = typeof intent.barIndex === "number" ? ` in bar ${Math.round(intent.barIndex + 1)}` : "";
+      return {
+        type: "canonical_command",
+        command: `${intent.field} step ${Math.round(intent.stepIndex + 1)} ${val} on ${track}${maybeBar}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
   return null;
 };
 
@@ -663,6 +723,71 @@ const toTypedPlanCandidate = (value: unknown, request: DiffEngineRequest): DiffP
           trackId: track.id,
           fromBarIndex,
           toBarIndex,
+        },
+      ],
+    };
+  }
+
+  if (type === "rotate_track_bar_assignments") {
+    const intent = raw as unknown as RotateTrackBarAssignmentsIntent;
+    const track = resolveTrack(request, intent.track);
+    if (
+      !track ||
+      typeof intent.fromBarIndex !== "number" ||
+      typeof intent.toBarIndex !== "number" ||
+      typeof intent.steps !== "number"
+    ) {
+      return null;
+    }
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.7,
+      label: `Rotate ${track.name} Bars`,
+      explanation:
+        intent.note ??
+        `Rotate ${track.name} bars ${Math.round(intent.fromBarIndex) + 1}-${Math.round(intent.toBarIndex) + 1}`,
+      actions: [
+        {
+          type: "rotate_track_bar_assignments",
+          trackId: track.id,
+          fromBarIndex: Math.max(0, Math.round(intent.fromBarIndex)),
+          toBarIndex: Math.max(0, Math.round(intent.toBarIndex)),
+          steps: Math.round(intent.steps),
+        },
+      ],
+    };
+  }
+
+  if (type === "set_synth_step_notes_field") {
+    const intent = raw as unknown as SetSynthStepNotesFieldIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "synth" || (intent.field !== "velocity" && intent.field !== "length")) {
+      return null;
+    }
+    if (typeof intent.stepIndex !== "number" || typeof intent.value !== "number") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const stepIndex = Math.max(0, Math.min(15, Math.round(intent.stepIndex)));
+    const value =
+      intent.field === "velocity"
+        ? clamp01(intent.value)
+        : Math.max(1, Math.min(16, Math.round(intent.value)));
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.72,
+      label: `Set ${track.name} ${intent.field}`,
+      explanation: intent.note ?? `Set ${track.name} ${intent.field} on step ${stepIndex + 1}`,
+      actions: [
+        {
+          type: "set_synth_step_notes_field",
+          trackId: track.id,
+          barIndex,
+          stepIndex,
+          field: intent.field,
+          value,
         },
       ],
     };

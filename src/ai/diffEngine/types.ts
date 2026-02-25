@@ -97,6 +97,25 @@ export type DiffPlanAction =
       toBarIndex: number;
       label?: string;
       explanation?: string;
+    }
+  | {
+      type: "rotate_track_bar_assignments";
+      trackId: string;
+      fromBarIndex: number;
+      toBarIndex: number;
+      steps: number;
+      label?: string;
+      explanation?: string;
+    }
+  | {
+      type: "set_synth_step_notes_field";
+      trackId: string;
+      barIndex: number;
+      stepIndex: number;
+      field: "velocity" | "length";
+      value: number;
+      label?: string;
+      explanation?: string;
     };
 
 export interface DiffPlanCandidate {

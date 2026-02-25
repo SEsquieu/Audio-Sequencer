@@ -201,6 +201,26 @@ const formatPatchPath = (path: string): string =>
     .replace(/^\//, "")
     .replace(/\//g, ".");
 
+type AiLockState = {
+  drums: boolean;
+  timing: boolean;
+  arrangement: boolean;
+  sound: boolean;
+  routing: boolean;
+  melody: boolean;
+  rhythm: boolean;
+};
+
+const DEFAULT_AI_LOCKS: AiLockState = {
+  drums: false,
+  timing: false,
+  arrangement: false,
+  sound: false,
+  routing: false,
+  melody: false,
+  rhythm: false,
+};
+
 const createEmptySynthSteps = (): SynthStep[][] => Array.from({ length: 16 }, () => []);
 const createEmptyDrumSteps = () => Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
 type SynthStepVisual = "off" | "single" | "start" | "middle" | "end";
@@ -497,6 +517,8 @@ function App() {
   const [masterFxRackOpen, setMasterFxRackOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
   const [isSoundOpen, setIsSoundOpen] = useState(false);
+  const [isTrackNameEditing, setIsTrackNameEditing] = useState(false);
+  const [trackNameDraft, setTrackNameDraft] = useState("");
   const [isMobileAddTrackMenuOpen, setIsMobileAddTrackMenuOpen] = useState(false);
   const [octaveBase, setOctaveBase] = useState(DEFAULT_OCTAVE_BASE);
   const [octaveScrubOffsetPx, setOctaveScrubOffsetPx] = useState(0);
@@ -513,6 +535,7 @@ function App() {
   const [aiDiagnostics, setAiDiagnostics] = useState<DiffEngineDiagnostics | null>(null);
   const [aiSelectedTrackOnly, setAiSelectedTrackOnly] = useState(true);
   const [aiLiveSafeWhilePlaying, setAiLiveSafeWhilePlaying] = useState(true);
+  const [aiLocks, setAiLocks] = useState<AiLockState>(DEFAULT_AI_LOCKS);
   const [aiProviderDescriptors, setAiProviderDescriptors] = useState<AiProviderDescriptor[]>(() => listAiProviderDescriptors());
   const [openAiApiKeyDraft, setOpenAiApiKeyDraft] = useState(() => getStoredProviderApiKey("user-api-openai"));
   const [hasOpenAiApiKey, setHasOpenAiApiKey] = useState(() => hasStoredProviderApiKey("user-api-openai"));
@@ -542,6 +565,7 @@ function App() {
   });
 
   const engineRef = useRef<AudioEngine | null>(null);
+  const trackNameInputRef = useRef<HTMLInputElement | null>(null);
   const songRef = useRef<SongState>(song);
   const octaveScrubRef = useRef<OctaveScrubState | null>(null);
   const octaveTransitionTimerRef = useRef<number | null>(null);
@@ -1261,6 +1285,42 @@ function App() {
     });
   };
 
+  useEffect(() => {
+    if (track) {
+      setTrackNameDraft(track.name);
+    }
+    setIsTrackNameEditing(false);
+  }, [track?.id, track?.name]);
+
+  useEffect(() => {
+    if (isTrackNameEditing) {
+      trackNameInputRef.current?.focus();
+      trackNameInputRef.current?.select();
+    }
+  }, [isTrackNameEditing]);
+
+  const commitTrackNameDraft = () => {
+    if (!track) {
+      return;
+    }
+    const trimmed = trackNameDraft.trim();
+    const nextName = trimmed.length > 0 ? trimmed : track.name;
+    setIsTrackNameEditing(false);
+    setTrackNameDraft(nextName);
+    if (nextName !== track.name) {
+      applySingleReplace(`/tracks/${safeTrackIndex}/name`, nextName, `Rename ${track.name} Track`);
+    }
+  };
+
+  const cancelTrackNameEdit = () => {
+    if (!track) {
+      setIsTrackNameEditing(false);
+      return;
+    }
+    setTrackNameDraft(track.name);
+    setIsTrackNameEditing(false);
+  };
+
   const onSynthEditorPointerLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse") {
       return;
@@ -1662,7 +1722,7 @@ function App() {
           selectedBar,
         },
         0.6,
-        {},
+        aiLocks,
         {
           isPlaying,
           preferOffline: true,
@@ -1761,6 +1821,10 @@ function App() {
     const nextValue = value === "auto" ? "auto" : value;
     setAiProviderPreferenceState(nextValue);
     setStoredAiProviderPreference(nextValue);
+  };
+
+  const toggleAiLock = (key: keyof AiLockState) => {
+    setAiLocks((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
   const onOpenAiApiKeySave = () => {
@@ -3545,7 +3609,44 @@ function App() {
               aria-label="Sound Controls"
             >
               <div className="sound-sheet-header">
-                <h2>Sound - {track.name}</h2>
+                <div className="sound-sheet-title-block">
+                  <div className="sound-track-name-row">
+                    {isTrackNameEditing ? (
+                      <input
+                        ref={trackNameInputRef}
+                        type="text"
+                        className="sound-track-name-input"
+                        value={trackNameDraft}
+                        onChange={(e) => setTrackNameDraft(e.target.value)}
+                        onBlur={commitTrackNameDraft}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitTrackNameDraft();
+                          } else if (e.key === "Escape") {
+                            e.preventDefault();
+                            cancelTrackNameEdit();
+                          }
+                        }}
+                        aria-label="Edit track name"
+                        maxLength={32}
+                      />
+                    ) : (
+                      <>
+                        <h2 className="sound-track-title">{track.name}</h2>
+                        <button
+                          type="button"
+                          className="sound-track-rename-button"
+                          onClick={() => setIsTrackNameEditing(true)}
+                          aria-label={`Rename track ${track.name}`}
+                          title={`Rename track ${track.name}`}
+                        >
+                          <span aria-hidden="true">✎</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
                 <button
                   type="button"
                   className="sound-sheet-close"
@@ -4226,221 +4327,6 @@ function App() {
           </span>
         </div>
 
-        <div className="ai-quick-prompts">
-          {[
-            ["Punchier", "make drums punchy"],
-            ["Lo-fi", "make it lofi"],
-            ["Add swing", "add swing"],
-            ["Add variation", "add variation"],
-          ].map(([label, p]) => (
-            <button
-              type="button"
-              key={label}
-              className="ai-quick-chip"
-              onClick={() => {
-                setPrompt(p);
-                void generateCandidates(p);
-              }}
-              disabled={isAiGenerating}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <form onSubmit={onSubmitPrompt} className="ai-form">
-          <label className="ai-form-label" htmlFor="ai-prompt-input">
-            Prompt
-          </label>
-          <textarea
-            id="ai-prompt-input"
-            className="ai-prompt-input"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe the patch change you want..."
-            rows={2}
-          />
-          <div className="ai-form-actions">
-            <button type="submit" disabled={isAiGenerating}>
-              {isAiGenerating ? "Generating..." : "Generate"}
-            </button>
-            {isAiGenerating && (
-              <button type="button" onClick={cancelAiGeneration}>
-                Cancel
-              </button>
-            )}
-            <button type="button" onClick={() => setPrompt("")}>
-              Clear
-            </button>
-          </div>
-        </form>
-
-        <div className="ai-provider-row">
-          <label className="ai-form-label" htmlFor="ai-provider-select">
-            Provider
-          </label>
-          <select
-            id="ai-provider-select"
-            className="ai-provider-select"
-            value={aiProviderPreference}
-            onChange={(e) => onAiProviderPreferenceChange(e.target.value)}
-            disabled={isAiGenerating}
-          >
-            <option value="auto">Auto</option>
-            {aiProviderDescriptors.map((provider) => (
-              <option
-                key={provider.id}
-                value={provider.id}
-                disabled={provider.availability === "unavailable" && provider.authMode !== "user_api_key"}
-              >
-                {provider.label}
-                {provider.availability === "unavailable"
-                  ? provider.authMode === "user_api_key"
-                    ? " (Needs API Key)"
-                    : " (Unavailable)"
-                  : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="ai-guardrail-row">
-          <label>
-            <input
-              type="checkbox"
-              checked={aiSelectedTrackOnly}
-              onChange={(e) => setAiSelectedTrackOnly(e.target.checked)}
-            />
-            Selected Track Only
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={aiLiveSafeWhilePlaying}
-              onChange={(e) => setAiLiveSafeWhilePlaying(e.target.checked)}
-            />
-            Live-Safe While Playing
-          </label>
-        </div>
-
-        <div className="ai-provider-status-list">
-          {aiProviderDescriptors
-            .filter(
-              (provider) =>
-                provider.id === "ollama-local" || provider.id === "user-api-openai" || provider.id === "user-api-anthropic"
-            )
-            .map((provider) => {
-              const health = aiProviderHealth[provider.id];
-              const statusLabel =
-                provider.availability === "unavailable"
-                  ? provider.unavailableReason ?? "Unavailable"
-                  : health
-                    ? health.ok
-                      ? "Ready"
-                      : `Issue: ${health.reason ?? "Unreachable"}`
-                    : "Checking…";
-              return (
-                <div key={provider.id} className="ai-provider-status-item">
-                  <span>{provider.label}</span>
-                  <span className={health?.ok ? "ok" : provider.availability === "unavailable" ? "warn" : ""}>{statusLabel}</span>
-                </div>
-              );
-            })}
-        </div>
-
-        {aiProviderPreference === "user-api-openai" && !hasOpenAiApiKey && (
-          <div className="ai-provider-key-panel">
-            <label className="ai-form-label" htmlFor="openai-api-key-input">
-              OpenAI API Key (local only)
-            </label>
-            <div className="ai-provider-key-row">
-              <input
-                id="openai-api-key-input"
-                className="ai-provider-key-input"
-                type="password"
-                value={openAiApiKeyDraft}
-                onChange={(e) => setOpenAiApiKeyDraft(e.target.value)}
-                placeholder="sk-..."
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button type="button" onClick={onOpenAiApiKeySave} disabled={isAiGenerating}>
-                Save
-              </button>
-            </div>
-          </div>
-        )}
-        {aiProviderPreference === "user-api-anthropic" && !hasAnthropicApiKey && (
-          <div className="ai-provider-key-panel">
-            <label className="ai-form-label" htmlFor="anthropic-api-key-input">
-              Anthropic API Key (local only)
-            </label>
-            <div className="ai-provider-key-row">
-              <input
-                id="anthropic-api-key-input"
-                className="ai-provider-key-input"
-                type="password"
-                value={anthropicApiKeyDraft}
-                onChange={(e) => setAnthropicApiKeyDraft(e.target.value)}
-                placeholder="sk-ant-..."
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button type="button" onClick={onAnthropicApiKeySave} disabled={isAiGenerating}>
-                Save
-              </button>
-            </div>
-          </div>
-        )}
-
-        {(aiProviderPreference === "ollama-local" ||
-          aiProviderPreference === "user-api-openai" ||
-          aiProviderPreference === "user-api-anthropic") && (
-          <div className="ai-provider-key-panel">
-            <label className="ai-form-label" htmlFor="ai-provider-model-input">
-              Model Override (optional)
-            </label>
-            <div className="ai-provider-key-row">
-              <input
-                id="ai-provider-model-input"
-                className="ai-provider-key-input"
-                type="text"
-                value={
-                  aiProviderPreference === "ollama-local"
-                    ? ollamaModelDraft
-                    : aiProviderPreference === "user-api-openai"
-                      ? openAiModelDraft
-                      : anthropicModelDraft
-                }
-                onChange={(e) => {
-                  if (aiProviderPreference === "ollama-local") setOllamaModelDraft(e.target.value);
-                  else if (aiProviderPreference === "user-api-openai") setOpenAiModelDraft(e.target.value);
-                  else if (aiProviderPreference === "user-api-anthropic") setAnthropicModelDraft(e.target.value);
-                }}
-                placeholder="Leave blank for default"
-                autoComplete="off"
-                spellCheck={false}
-              />
-              <button
-                type="button"
-                onClick={() =>
-                  onProviderModelSave(
-                    aiProviderPreference as AiProviderId,
-                    aiProviderPreference === "ollama-local"
-                      ? ollamaModelDraft
-                      : aiProviderPreference === "user-api-openai"
-                        ? openAiModelDraft
-                        : anthropicModelDraft
-                  )
-                }
-                disabled={isAiGenerating}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="candidate-list">
           {isAiGenerating && (
             <div className="ai-loading-state" role="status" aria-live="polite">
@@ -4488,49 +4374,283 @@ function App() {
             <div className="ai-empty-state">
               {candidates.length > 0
                 ? "No proposals match the current AI filters. Toggle Selected Track Only or Live-Safe While Playing."
-                : "No proposals yet. Use a quick prompt or write your own."}
+                : "No proposals yet. Use a prompt below."}
             </div>
           )}
           {filteredCandidates.map((candidate, idx) => {
             const affectedPaths = Array.from(new Set(candidate.ops.map((op) => op.path))).slice(0, 4);
             const touchedTracks = getPatchedTrackIndices(candidate);
             return (
-            <article key={candidate.id} className="candidate-card">
-              <div className="candidate-head">
-                <h3>{candidate.label}</h3>
-                <span className="candidate-tag">Option {idx + 1}</span>
-              </div>
-              <p>{candidate.explanation}</p>
-              <div className="candidate-meta-row">
-                <span>{isAiPatchLiveSafe(candidate) ? "Live-safe" : "Structural/heavy"}</span>
-                <span>
-                  {touchedTracks.length > 0
-                    ? `Tracks: ${touchedTracks.map((n) => n + 1).join(", ")}`
-                    : "Global"}
-                </span>
-              </div>
-              {affectedPaths.length > 0 && (
-                <div className="candidate-path-list" aria-label="Affected paths">
-                  {affectedPaths.map((path) => (
-                    <code key={`${candidate.id}-${path}`}>{formatPatchPath(path)}</code>
-                  ))}
+              <article key={candidate.id} className="candidate-card">
+                <div className="candidate-head">
+                  <h3>{candidate.label}</h3>
+                  <span className="candidate-tag">Option {idx + 1}</span>
                 </div>
-              )}
-              <div className="candidate-actions">
-                <button type="button" onClick={() => auditionToggle(candidate)}>
-                  {auditionPatchId === candidate.id ? "Stop" : "Audition"}
-                </button>
-                <button type="button" className="candidate-accept" onClick={() => acceptCandidate(candidate)}>
-                  Accept
-                </button>
-                <button type="button" className="candidate-reject" onClick={() => rejectCandidate(candidate.id)}>
-                  Reject
-                </button>
-              </div>
-            </article>
+                <p>{candidate.explanation}</p>
+                <div className="candidate-meta-row">
+                  <span>{isAiPatchLiveSafe(candidate) ? "Live-safe" : "Structural/heavy"}</span>
+                  <span>{touchedTracks.length > 0 ? `Tracks: ${touchedTracks.map((n) => n + 1).join(", ")}` : "Global"}</span>
+                </div>
+                {affectedPaths.length > 0 && (
+                  <div className="candidate-path-list" aria-label="Affected paths">
+                    {affectedPaths.map((path) => (
+                      <code key={`${candidate.id}-${path}`}>{formatPatchPath(path)}</code>
+                    ))}
+                  </div>
+                )}
+                <div className="candidate-actions">
+                  <button type="button" onClick={() => auditionToggle(candidate)}>
+                    {auditionPatchId === candidate.id ? "Stop" : "Audition"}
+                  </button>
+                  <button type="button" className="candidate-accept" onClick={() => acceptCandidate(candidate)}>
+                    Accept
+                  </button>
+                  <button type="button" className="candidate-reject" onClick={() => rejectCandidate(candidate.id)}>
+                    Reject
+                  </button>
+                </div>
+              </article>
             );
           })}
         </div>
+
+        <form onSubmit={onSubmitPrompt} className="ai-form">
+          <label className="ai-form-label" htmlFor="ai-prompt-input">
+            Prompt
+          </label>
+          <textarea
+            id="ai-prompt-input"
+            className="ai-prompt-input"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Describe the patch change you want..."
+            rows={2}
+          />
+          <div className="ai-form-actions">
+            <button type="submit" disabled={isAiGenerating}>
+              {isAiGenerating ? "Generating..." : "Generate"}
+            </button>
+            {isAiGenerating && (
+              <button type="button" onClick={cancelAiGeneration}>
+                Cancel
+              </button>
+            )}
+            <button type="button" onClick={() => setPrompt("")}>
+              Clear
+            </button>
+          </div>
+        </form>
+
+        <details className="ai-panel-collapse">
+          <summary>Guardrails & Locks</summary>
+          <div className="ai-collapse-body">
+            <div className="ai-guardrail-row">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={aiSelectedTrackOnly}
+                  onChange={(e) => setAiSelectedTrackOnly(e.target.checked)}
+                />
+                Selected Track Only
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={aiLiveSafeWhilePlaying}
+                  onChange={(e) => setAiLiveSafeWhilePlaying(e.target.checked)}
+                />
+                Live-Safe While Playing
+              </label>
+            </div>
+
+            <div className="ai-lock-grid" aria-label="AI lock categories">
+              {(
+                [
+                  ["drums", "Lock Drums"],
+                  ["timing", "Lock Timing"],
+                  ["arrangement", "Lock Arrangement"],
+                  ["sound", "Lock Sound"],
+                  ["routing", "Lock Routing"],
+                  ["melody", "Lock Melody"],
+                  ["rhythm", "Lock Rhythm"],
+                ] as Array<[keyof AiLockState, string]>
+              ).map(([key, label]) => (
+                <label key={key} className={aiLocks[key] ? "ai-lock-chip on" : "ai-lock-chip"}>
+                  <input type="checkbox" checked={aiLocks[key]} onChange={() => toggleAiLock(key)} />
+                  <span>{label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        </details>
+
+        <div className="ai-provider-controls-row">
+          <div className="ai-provider-row">
+          <label className="ai-form-label" htmlFor="ai-provider-select">
+            Provider
+          </label>
+          <select
+            id="ai-provider-select"
+            className="ai-provider-select"
+            value={aiProviderPreference}
+            onChange={(e) => onAiProviderPreferenceChange(e.target.value)}
+            disabled={isAiGenerating}
+          >
+            <option value="auto">Auto</option>
+            {aiProviderDescriptors.map((provider) => (
+              <option
+                key={provider.id}
+                value={provider.id}
+                disabled={provider.availability === "unavailable" && provider.authMode !== "user_api_key"}
+              >
+                {provider.label}
+                {provider.availability === "unavailable"
+                  ? provider.authMode === "user_api_key"
+                    ? " (Needs API Key)"
+                    : " (Unavailable)"
+                  : ""}
+              </option>
+            ))}
+          </select>
+          </div>
+
+        <details className="ai-panel-collapse ai-panel-collapse-inline">
+          <summary>AI Provider Settings</summary>
+          <div className="ai-collapse-body">
+            <div className="ai-provider-status-list">
+              {aiProviderDescriptors
+                .filter(
+                  (provider) =>
+                    provider.id === "ollama-local" || provider.id === "user-api-openai" || provider.id === "user-api-anthropic"
+                )
+                .map((provider) => {
+                  const health = aiProviderHealth[provider.id];
+                  const statusLabel =
+                    provider.availability === "unavailable"
+                      ? provider.unavailableReason ?? "Unavailable"
+                      : health
+                        ? health.ok
+                          ? "Ready"
+                          : `Issue: ${health.reason ?? "Unreachable"}`
+                        : "Checking…";
+                  return (
+                    <div key={provider.id} className="ai-provider-status-item">
+                      <span>{provider.label}</span>
+                      <span className={health?.ok ? "ok" : provider.availability === "unavailable" ? "warn" : ""}>{statusLabel}</span>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {aiProviderPreference === "user-api-openai" && !hasOpenAiApiKey && (
+              <div className="ai-provider-key-panel">
+                <label className="ai-form-label" htmlFor="openai-api-key-input">
+                  OpenAI API Key (local only)
+                </label>
+                <div className="ai-provider-key-row">
+                  <input
+                    id="openai-api-key-input"
+                    className="ai-provider-key-input"
+                    type="password"
+                    value={openAiApiKeyDraft}
+                    onChange={(e) => setOpenAiApiKeyDraft(e.target.value)}
+                    placeholder="sk-..."
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button type="button" onClick={onOpenAiApiKeySave} disabled={isAiGenerating}>
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+            {aiProviderPreference === "user-api-anthropic" && !hasAnthropicApiKey && (
+              <div className="ai-provider-key-panel">
+                <label className="ai-form-label" htmlFor="anthropic-api-key-input">
+                  Anthropic API Key (local only)
+                </label>
+                <div className="ai-provider-key-row">
+                  <input
+                    id="anthropic-api-key-input"
+                    className="ai-provider-key-input"
+                    type="password"
+                    value={anthropicApiKeyDraft}
+                    onChange={(e) => setAnthropicApiKeyDraft(e.target.value)}
+                    placeholder="sk-ant-..."
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button type="button" onClick={onAnthropicApiKeySave} disabled={isAiGenerating}>
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {aiProviderPreference === "ollama-local" && (
+              <details className="ai-provider-advanced">
+                <summary>Ollama Advanced</summary>
+                <div className="ai-provider-key-panel" style={{ marginTop: "0.45rem" }}>
+                  <label className="ai-form-label" htmlFor="ai-provider-model-input-ollama">
+                    Model Override (optional)
+                  </label>
+                  <div className="ai-provider-key-row">
+                    <input
+                      id="ai-provider-model-input-ollama"
+                      className="ai-provider-key-input"
+                      type="text"
+                      value={ollamaModelDraft}
+                      onChange={(e) => setOllamaModelDraft(e.target.value)}
+                      placeholder="Leave blank for default"
+                      autoComplete="off"
+                      spellCheck={false}
+                    />
+                    <button type="button" onClick={() => onProviderModelSave("ollama-local", ollamaModelDraft)} disabled={isAiGenerating}>
+                      Save
+                    </button>
+                  </div>
+                </div>
+              </details>
+            )}
+
+            {(aiProviderPreference === "user-api-openai" || aiProviderPreference === "user-api-anthropic") && (
+              <div className="ai-provider-key-panel">
+                <label className="ai-form-label" htmlFor="ai-provider-model-input">
+                  Model Override (optional)
+                </label>
+                <div className="ai-provider-key-row">
+                  <input
+                    id="ai-provider-model-input"
+                    className="ai-provider-key-input"
+                    type="text"
+                    value={aiProviderPreference === "user-api-openai" ? openAiModelDraft : anthropicModelDraft}
+                    onChange={(e) => {
+                      if (aiProviderPreference === "user-api-openai") setOpenAiModelDraft(e.target.value);
+                      else if (aiProviderPreference === "user-api-anthropic") setAnthropicModelDraft(e.target.value);
+                    }}
+                    placeholder="Leave blank for default"
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    type="button"
+                    onClick={() =>
+                      onProviderModelSave(
+                        aiProviderPreference as AiProviderId,
+                        aiProviderPreference === "user-api-openai" ? openAiModelDraft : anthropicModelDraft
+                      )
+                    }
+                    disabled={isAiGenerating}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </details>
+        </div>
+
       </section>
     </div>
   );

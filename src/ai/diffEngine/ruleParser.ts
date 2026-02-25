@@ -169,6 +169,16 @@ const parseFxParamValue = (fxType: FxType, param: string, raw: string): number |
 const findTrackFxIndex = (song: SongState, trackIndex: number, fxType: FxType): number =>
   song.tracks[trackIndex]?.insertFx.findIndex((fx) => fx.type === fxType) ?? -1;
 
+const parseStepValue = (raw: string): number | null => {
+  const t = raw.trim();
+  if (/^(on|full|max)$/.test(t)) return 1;
+  if (/^(off|mute|none)$/.test(t)) return 0;
+  const n = parsePercentOrUnit(t);
+  return Number.isFinite(n) ? clamp(n, 0, 1) : null;
+};
+
+const parseBarIndex1 = (raw: string, max: number): number => clamp(Math.round(Number(raw)) - 1, 0, Math.max(0, max));
+
 export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPlanCandidate[] => {
   const text = norm(request.prompt);
   const song = request.song;
@@ -198,9 +208,9 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     }
   }
 
-  match = text.match(/^(?:set )?eco mode(?: to)? (on|off)$/);
+  match = text.match(/^(?:(?:set )?eco mode(?: to)? (on|off)|(?:enable|disable) eco mode)$/);
   if (match) {
-    const enabled = match[1] === "on";
+    const enabled = (match[1] ?? "").toLowerCase() === "on" || text.startsWith("enable eco mode");
     candidates.push(
       wrapPatchCandidate(enabled ? "Enable Eco Mode" : "Disable Eco Mode", `Turn eco mode ${enabled ? "on" : "off"}`, [
         { op: "replace", path: "/performance/ecoMode", value: enabled },
@@ -209,9 +219,9 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     return candidates;
   }
 
-  match = text.match(/^(?:set )?master safety(?: to)? (on|off)$/);
+  match = text.match(/^(?:(?:set )?master safety(?: to)? (on|off)|(?:enable|disable) master safety)$/);
   if (match) {
-    const enabled = match[1] === "on";
+    const enabled = (match[1] ?? "").toLowerCase() === "on" || text.startsWith("enable master safety");
     candidates.push(
       wrapPatchCandidate(
         enabled ? "Enable Master Safety" : "Disable Master Safety",
@@ -236,6 +246,196 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
   }
 
   if (track) {
+    match = text.match(/^(copy|duplicate)\s+.+?\s+bar\s+(\d{1,3})\s+(?:to|into)\s+bar\s+(\d{1,3})$/);
+    if (!match) {
+      match = text.match(/^(copy|duplicate)\s+bar\s+(\d{1,3})\s+(?:to|into)\s+bar\s+(\d{1,3})\s+(?:on\s+)?(.+)$/);
+    }
+    if (match) {
+      const fromBarIndex = parseBarIndex1(match[2], track.lane.length - 1);
+      const toBarIndex = parseBarIndex1(match[3], track.lane.length - 1);
+      candidates.push(
+        wrapPatchCandidate(
+          `Copy ${track.name} Bar`,
+          `Copy ${track.name} bar ${fromBarIndex + 1} to bar ${toBarIndex + 1}`,
+          [{ op: "replace", path: `/tracks/${trackIndex}/lane/${toBarIndex}`, value: track.lane[fromBarIndex] }],
+          0.98
+        )
+      );
+      return candidates;
+    }
+
+    match = text.match(/^(rotate|shift)\s+.+?\s+bars\s+(\d{1,3})\s*-\s*(\d{1,3})\s+by\s+(-?\d{1,3})$/);
+    if (!match) {
+      match = text.match(/^(rotate|shift)\s+bars\s+(\d{1,3})\s*-\s*(\d{1,3})\s+by\s+(-?\d{1,3})\s+(?:on\s+)?(.+)$/);
+    }
+    if (match) {
+      const start = parseBarIndex1(match[2], track.lane.length - 1);
+      const end = parseBarIndex1(match[3], track.lane.length - 1);
+      const lo = Math.min(start, end);
+      const hi = Math.max(start, end);
+      const segment = track.lane.slice(lo, hi + 1);
+      if (segment.length > 1) {
+        const steps = Math.round(Number(match[4]));
+        const rot = ((steps % segment.length) + segment.length) % segment.length;
+        if (rot > 0) {
+          const rotated = segment.slice(segment.length - rot).concat(segment.slice(0, segment.length - rot));
+          const ops: JsonPatchOp[] = [];
+          rotated.forEach((value, idx) => {
+            if (value !== track.lane[lo + idx]) {
+              ops.push({ op: "replace", path: `/tracks/${trackIndex}/lane/${lo + idx}`, value });
+            }
+          });
+          if (ops.length > 0) {
+            candidates.push(
+              wrapPatchCandidate(
+                `Rotate ${track.name} Bars`,
+                `Rotate ${track.name} bars ${lo + 1}-${hi + 1} by ${steps}`,
+                ops,
+                0.97
+              )
+            );
+            return candidates;
+          }
+        }
+      }
+    }
+
+    match = text.match(
+      /^(?:(add|remove|delete|turn on|turn off)\s+)?(kick|snare|hat)\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(on|off|[\d.]+%?))?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (!match) {
+      match = text.match(
+        /^(?:turn\s+)?(kick|snare|hat)\s+(on|off)\s+(?:at\s+)?(?:step\s+)?(\d{1,2})(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      );
+      if (match) {
+        match = [match[0], `turn ${match[2]}`, match[1], match[3], match[2], match[4]] as RegExpMatchArray;
+      }
+    }
+    if (match && track.type === "drums") {
+      const verb = match[1] ?? null;
+      const lane = match[2] as "kick" | "snare" | "hat";
+      const stepIndex = clamp(Math.round(Number(match[3])) - 1, 0, 15);
+      const rawValue =
+        match[4] ??
+        (verb === "add" || verb === "turn on"
+          ? "on"
+          : verb === "remove" || verb === "delete" || verb === "turn off"
+            ? "off"
+            : "");
+      const stepValue = rawValue ? parseStepValue(rawValue) : null;
+      const barIndex = clamp(
+        (match[5] ? Math.round(Number(match[5])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      if (stepValue !== null && patternId && patternId !== "0") {
+        candidates.push(
+          wrapPatchCandidate(
+            `Set ${track.name} ${lane} Step`,
+            `Set ${lane} step ${stepIndex + 1} in bar ${barIndex + 1}`,
+            [
+              {
+                op: "replace",
+                path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${lane}`,
+                value: stepValue,
+              },
+            ],
+            0.98
+          )
+        );
+        return candidates;
+      }
+    }
+
+    match = text.match(/^(?:transpose\s+)?(.+?)\s+(up|down)\s+(\d{1,2})(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/);
+    if (match && track.type === "synth") {
+      const dir = match[2] === "down" ? -1 : 1;
+      const semitones = clamp(Math.round(Number(match[3])) * dir, -24, 24);
+      const barIndex = clamp(
+        (match[4] ? Math.round(Number(match[4])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "synth") {
+        const ops: JsonPatchOp[] = [];
+        pattern.steps.forEach((cell, stepIdx) => {
+          cell.forEach((note, noteIdx) => {
+            const nextPitch = clamp(Math.round(note.pitch + semitones), 0, 127);
+            if (nextPitch !== note.pitch) {
+              ops.push({
+                op: "replace",
+                path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIdx}/${noteIdx}/pitch`,
+                value: nextPitch,
+              });
+            }
+          });
+        });
+        if (ops.length > 0) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Transpose ${track.name} Bar`,
+              `Transpose ${track.name} bar ${barIndex + 1} by ${semitones} semitones`,
+              ops,
+              0.97
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(/^(velocity|length)\s+step\s+(\d{1,2})\s+([\d.]+%?)\s+(?:on|to)\s+.+?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/);
+    if (match && track.type === "synth") {
+      const field = match[1] as "velocity" | "length";
+      const stepIndex = clamp(Math.round(Number(match[2])) - 1, 0, 15);
+      const barIndex = clamp(
+        (match[4] ? Math.round(Number(match[4])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "synth") {
+        const nextValue =
+          field === "velocity"
+            ? (() => {
+                const n = parsePercentOrUnit(match![3]);
+                return Number.isFinite(n) ? clamp(n, 0, 1) : null;
+              })()
+            : (() => {
+                const n = Number(match![3].replace("%", ""));
+                return Number.isFinite(n) ? clamp(Math.round(n), 1, 16) : null;
+              })();
+        if (nextValue !== null) {
+          const cell = pattern.steps[stepIndex];
+          const ops: JsonPatchOp[] = [];
+          cell.forEach((note, noteIdx) => {
+            if (note[field] !== nextValue) {
+              ops.push({
+                op: "replace",
+                path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${noteIdx}/${field}`,
+                value: nextValue,
+              });
+            }
+          });
+          if (ops.length > 0) {
+            candidates.push(
+              wrapPatchCandidate(
+                `Set ${track.name} ${field}`,
+                `Set ${field} on ${track.name} step ${stepIndex + 1} in bar ${barIndex + 1}`,
+                ops,
+                0.97
+              )
+            );
+            return candidates;
+          }
+        }
+      }
+    }
+
     match = text.match(/^(?:set )?.*?\bgain(?: to)? ([\d.]+%?)$/);
     if (match) {
       const value = clamp(parsePercentOrUnit(match[1]), 0, 1.2);
