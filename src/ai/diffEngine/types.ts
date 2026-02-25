@@ -1,4 +1,5 @@
 import { JsonPatchOp, PatchMeta, SongState } from "../../types/song";
+import { AiProviderId } from "../providers/types";
 
 export interface DiffEngineScope {
   selectedTrackId?: string;
@@ -12,6 +13,11 @@ export interface DiffEngineRequest {
   intensity?: number;
   locks?: Record<string, boolean>;
   maxCandidates?: number;
+  isPlaying?: boolean;
+  preferOffline?: boolean;
+  providerPreference?: string | "auto";
+  signal?: AbortSignal;
+  timeoutMs?: number;
 }
 
 export type DiffPlanAction =
@@ -46,4 +52,19 @@ export interface DiffValidationResult {
   warnings: string[];
   affectedPaths: string[];
   error?: string;
+}
+
+export interface DiffEngineDiagnostics {
+  selectedProviderId: AiProviderId;
+  fallbackProviderIds: AiProviderId[];
+  routeReason: string;
+  usedFallback: boolean;
+  fallbackReason?: string;
+  providerRawIntentCount?: number;
+  providerCompiledPlanCount?: number;
+}
+
+export interface DiffEngineResult {
+  patches: PatchMeta[];
+  diagnostics: DiffEngineDiagnostics;
 }

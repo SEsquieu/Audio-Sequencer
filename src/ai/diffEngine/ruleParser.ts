@@ -9,6 +9,9 @@ const norm = (text: string) =>
     .toLowerCase()
     .trim()
     .replace(/\s+/g, " ")
+    .replace(/\bpercent\b/g, "%")
+    .replace(/\bvolume\b/g, "gain")
+    .replace(/\blevel\b/g, "gain")
     .replace(/\becho\b/g, "delay")
     .replace(/\bverb\b/g, "reverb");
 
@@ -188,6 +191,40 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
   }
 
   if (track) {
+    match = text.match(/^(?:set )?.*?\bgain(?: to)? ([\d.]+%?)$/);
+    if (match) {
+      const value = clamp(parsePercentOrUnit(match[1]), 0, 1.2);
+      if (Number.isFinite(value)) {
+        candidates.push(
+          wrapPatchCandidate(
+            `Set ${track.name} Gain`,
+            `Set ${track.name} gain to ${Math.round(value * 100)}%`,
+            [{ op: "replace", path: `/tracks/${trackIndex}/instrument/gain`, value }]
+          )
+        );
+        return candidates;
+      }
+    }
+
+    match = text.match(/^(lower|reduce|decrease|raise|increase|boost|turn up|turn down)\b.*?\bgain(?: by)?(?: to)? ?([\d.]+%?)?$/);
+    if (match) {
+      const verb = match[1];
+      const direction =
+        verb === "lower" || verb === "reduce" || verb === "decrease" || verb === "turn down" ? -1 : 1;
+      const explicitAmount = match[2] ? parsePercentOrUnit(match[2]) : NaN;
+      const delta = Number.isFinite(explicitAmount) ? clamp(explicitAmount, 0.01, 1.2) : 0.1;
+      const nextGain = clamp((track.instrument?.gain ?? 0.5) + direction * delta, 0, 1.2);
+      candidates.push(
+        wrapPatchCandidate(
+          `${direction < 0 ? "Lower" : "Raise"} ${track.name} Gain`,
+          `${direction < 0 ? "Lower" : "Raise"} ${track.name} gain to ${Math.round(nextGain * 100)}%`,
+          [{ op: "replace", path: `/tracks/${trackIndex}/instrument/gain`, value: nextGain }],
+          0.97
+        )
+      );
+      return candidates;
+    }
+
     match = text.match(/(?:set )?.*?(delay|reverb)(?: send)?(?: to)? ([\d.]+%?)$/);
     if (match) {
       const kind = match[1] as "delay" | "reverb";
@@ -232,7 +269,7 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
       }
     }
 
-    if (/^(?:add|insert) /.test(text) && text.includes(" to ")) {
+    if (/^(?:add|insert) /.test(text) && (text.includes(" to ") || text.includes(" on "))) {
       const fxType = parseFxType(text);
       if (fxType) {
         candidates.push(
@@ -250,4 +287,3 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
 
   return candidates;
 };
-

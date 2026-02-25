@@ -11,7 +11,10 @@ import {
   useRef,
   useState,
 } from "react";
-import { aiProposePatch } from "./ai/aiProposePatch";
+import { aiProposePatchDetailedAsync } from "./ai/aiProposePatch";
+import { listAiProviderDescriptors } from "./ai/providers/registry";
+import { getStoredAiProviderPreference, setStoredAiProviderPreference } from "./ai/providers/router";
+import type { DiffEngineDiagnostics } from "./ai/diffEngine/types";
 import { AudioEngine, getEffectiveLoopBars } from "./audio/engine";
 import { FxType, createFxInstance, FxInstance } from "./audio/fx/types";
 import { AdsrEnvelopeEditor } from "./components/AdsrEnvelopeEditor";
@@ -436,6 +439,11 @@ function App() {
   } | null>(null);
   const [prompt, setPrompt] = useState("");
   const [candidates, setCandidates] = useState<PatchMeta[]>([]);
+  const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [aiProviderPreference, setAiProviderPreferenceState] = useState<string | "auto">(() => getStoredAiProviderPreference());
+  const [aiDiagnostics, setAiDiagnostics] = useState<DiffEngineDiagnostics | null>(null);
+  const aiRequestSeqRef = useRef(0);
+  const aiAbortControllerRef = useRef<AbortController | null>(null);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
   const [trackNoteSpanMemory, setTrackNoteSpanMemory] = useState<Record<string, number>>({});
   const [timelineBarAction, setTimelineBarAction] = useState<TimelineBarActionState | null>(null);
@@ -1542,22 +1550,79 @@ function App() {
     setSelectedTrack(trackIndex);
   };
 
-  const generateCandidates = (text: string) => {
-    const next = aiProposePatch(
-      text,
-      committedSong,
-      {
-        selectedTrackId: track?.id,
-        selectedBar,
-      },
-      0.6,
-      {}
-    ).map((patch, idx) => ({
-      ...patch,
-      id: `${patch.id}-${idx}-${Date.now()}`,
-    }));
+  const generateCandidates = async (text: string) => {
+    const requestSeq = ++aiRequestSeqRef.current;
+    aiAbortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    aiAbortControllerRef.current = abortController;
+    setIsAiGenerating(true);
+    setAiDiagnostics(null);
+    try {
+      const result = await aiProposePatchDetailedAsync(
+        text,
+        committedSong,
+        {
+          selectedTrackId: track?.id,
+          selectedBar,
+        },
+        0.6,
+        {},
+        {
+          isPlaying,
+          preferOffline: true,
+          providerPreference: aiProviderPreference,
+          signal: abortController.signal,
+          timeoutMs: 10000,
+        }
+      );
+      const next = result.patches.map((patch, idx) => ({
+        ...patch,
+        id: `${patch.id}-${idx}-${Date.now()}`,
+      }));
 
-    setCandidates(next);
+      if (requestSeq !== aiRequestSeqRef.current) {
+        return;
+      }
+      setAiDiagnostics(result.diagnostics);
+      setCandidates(next);
+    } catch (error) {
+      if (requestSeq !== aiRequestSeqRef.current) {
+        return;
+      }
+      if (abortController.signal.aborted) {
+        setAiDiagnostics((prev) =>
+          prev ?? {
+            selectedProviderId: "smartPatch-local",
+            fallbackProviderIds: [],
+            routeReason: "Canceled",
+            usedFallback: true,
+            fallbackReason: "Request canceled",
+          }
+        );
+      } else {
+        setCandidates([]);
+        console.warn("[ai] candidate generation failed", error);
+      }
+    } finally {
+      if (aiAbortControllerRef.current === abortController) {
+        aiAbortControllerRef.current = null;
+      }
+      if (requestSeq === aiRequestSeqRef.current) {
+        setIsAiGenerating(false);
+      }
+    }
+  };
+
+  const cancelAiGeneration = () => {
+    aiAbortControllerRef.current?.abort();
+    aiAbortControllerRef.current = null;
+    setIsAiGenerating(false);
+  };
+
+  const onAiProviderPreferenceChange = (value: string) => {
+    const nextValue = value === "auto" ? "auto" : value;
+    setAiProviderPreferenceState(nextValue);
+    setStoredAiProviderPreference(nextValue);
   };
 
   const onSubmitPrompt = (event: FormEvent) => {
@@ -1565,7 +1630,7 @@ function App() {
     if (!prompt.trim()) {
       return;
     }
-    generateCandidates(prompt.trim());
+    void generateCandidates(prompt.trim());
   };
 
   const auditionToggle = (candidate: PatchMeta) => {
@@ -4015,8 +4080,9 @@ function App() {
               className="ai-quick-chip"
               onClick={() => {
                 setPrompt(p);
-                generateCandidates(p);
+                void generateCandidates(p);
               }}
+              disabled={isAiGenerating}
             >
               {label}
             </button>
@@ -4036,15 +4102,55 @@ function App() {
             rows={2}
           />
           <div className="ai-form-actions">
-            <button type="submit">Generate</button>
+            <button type="submit" disabled={isAiGenerating}>
+              {isAiGenerating ? "Generating..." : "Generate"}
+            </button>
+            {isAiGenerating && (
+              <button type="button" onClick={cancelAiGeneration}>
+                Cancel
+              </button>
+            )}
             <button type="button" onClick={() => setPrompt("")}>
               Clear
             </button>
           </div>
         </form>
 
+        <div className="ai-provider-row">
+          <label className="ai-form-label" htmlFor="ai-provider-select">
+            Provider
+          </label>
+          <select
+            id="ai-provider-select"
+            className="ai-provider-select"
+            value={aiProviderPreference}
+            onChange={(e) => onAiProviderPreferenceChange(e.target.value)}
+            disabled={isAiGenerating}
+          >
+            <option value="auto">Auto</option>
+            {listAiProviderDescriptors().map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="candidate-list">
-          {candidates.length === 0 && (
+          {isAiGenerating && (
+            <div className="ai-loading-state" role="status" aria-live="polite">
+              <span className="ai-loading-spinner" aria-hidden="true" />
+              <span>Running inference…</span>
+            </div>
+          )}
+          {aiDiagnostics && (
+            <div className="ai-debug-state">
+              <strong>{aiDiagnostics.selectedProviderId}</strong>
+              <span>{aiDiagnostics.routeReason}</span>
+              {aiDiagnostics.usedFallback && <span>Fallback: {aiDiagnostics.fallbackReason ?? "Yes"}</span>}
+            </div>
+          )}
+          {candidates.length === 0 && !isAiGenerating && (
             <div className="ai-empty-state">No proposals yet. Use a quick prompt or write your own.</div>
           )}
           {candidates.map((candidate, idx) => (
