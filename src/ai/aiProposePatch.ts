@@ -1,6 +1,5 @@
 import { PatchMeta, SongState } from "../types/song";
-import { generateSmartPatchCandidates } from "../smartPatch/engine";
-import { promptToIntents } from "../smartPatch/router";
+import { proposeDiffPatchCandidates } from "./diffEngine/engine";
 
 export interface AiScope {
   selectedTrackId?: string;
@@ -14,24 +13,12 @@ export const aiProposePatch = (
   intensity = 0.5,
   locks?: { [key: string]: boolean }
 ): PatchMeta[] => {
-  const intents = promptToIntents(
+  return proposeDiffPatchCandidates({
     prompt,
-    {
-      song,
-      selectedTrackId: scope.selectedTrackId,
-      selectedBar: scope.selectedBar,
-      locks,
-    },
-    intensity
-  );
-  return generateSmartPatchCandidates(
     song,
-    intents,
-    {
-      selectedTrackId: scope.selectedTrackId,
-      selectedBar: scope.selectedBar,
-      locks,
-    },
-    3
-  );
+    scope,
+    intensity,
+    locks,
+    maxCandidates: 3,
+  });
 };
