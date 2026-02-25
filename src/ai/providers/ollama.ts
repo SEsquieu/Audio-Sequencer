@@ -113,7 +113,12 @@ const parseJsonLoosely = (text: string): unknown => {
   throw new Error("No parseable JSON found in Ollama response");
 };
 
-const parseIntentEnvelopeFromText = (text: string): StructuredIntentEnvelope => normalizeEnvelopeShape(parseJsonLoosely(text));
+const parseIntentEnvelopeFromText = (text: string): StructuredIntentEnvelope => ({
+  ...normalizeEnvelopeShape(parseJsonLoosely(text)),
+  meta: {
+    rawResponsePreview: text.slice(0, 600),
+  },
+});
 
 const buildPrompt = (prompt: string, context?: AiPromptContext): string => `
 You convert user requests into canonical audio sequencer commands.

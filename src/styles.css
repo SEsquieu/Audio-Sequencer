@@ -2514,6 +2514,67 @@ input[type="range"] {
   font-size: 0.74rem;
 }
 
+.ai-trace-panel {
+  border: 1px solid #1f3b2c;
+  border-radius: 0.45rem;
+  background: #030906;
+  padding: 0.35rem 0.5rem;
+  color: #c8ead6;
+  font-size: 0.72rem;
+}
+
+.ai-trace-panel summary {
+  cursor: pointer;
+  color: #e7fff0;
+  font-weight: 600;
+}
+
+.ai-trace-grid {
+  display: grid;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+
+.ai-trace-label {
+  color: #9ec8b0;
+  font-size: 0.68rem;
+  margin-bottom: 0.2rem;
+}
+
+.ai-trace-value {
+  color: #e7fff0;
+}
+
+.ai-trace-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.ai-trace-list code {
+  border: 1px solid #1f3b2c;
+  border-radius: 0.35rem;
+  background: #050c09;
+  color: #d7ffee;
+  padding: 0.14rem 0.28rem;
+  font-size: 0.67rem;
+}
+
+.ai-trace-pre {
+  margin: 0;
+  border: 1px solid #1f3b2c;
+  border-radius: 0.35rem;
+  background: #000000;
+  color: #d7ffee;
+  padding: 0.4rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 8rem;
+  overflow: auto;
+  font-size: 0.67rem;
+  line-height: 1.25;
+}
+
 .candidate-list {
   margin-top: 0;
   display: grid;

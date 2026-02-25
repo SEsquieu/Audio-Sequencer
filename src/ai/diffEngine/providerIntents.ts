@@ -314,17 +314,26 @@ const coerceProviderIntent = (value: unknown): CanonicalCommandIntent | null => 
 export const compileProviderIntentsToPlans = (
   envelope: StructuredIntentEnvelope,
   request: DiffEngineRequest
-): DiffPlanCandidate[] => {
+): {
+  plans: DiffPlanCandidate[];
+  canonicalCommands: string[];
+  rejectedIntentCount: number;
+} => {
   const plans: DiffPlanCandidate[] = [];
+  const canonicalCommands: string[] = [];
+  let rejectedIntentCount = 0;
 
   for (const rawIntent of envelope.intents) {
     const coerced = coerceProviderIntent(rawIntent) ?? toCanonicalCommand(rawIntent, request);
     if (!coerced) {
+      rejectedIntentCount += 1;
       continue;
     }
+    canonicalCommands.push(coerced.command);
 
     const adjusted = adjustConfidenceForPromptAlignment(request, coerced.command, coerced.confidence);
     if (adjusted.rejectReason) {
+      rejectedIntentCount += 1;
       continue;
     }
 
@@ -343,5 +352,9 @@ export const compileProviderIntentsToPlans = (
     }
   }
 
-  return plans;
+  return {
+    plans,
+    canonicalCommands,
+    rejectedIntentCount,
+  };
 };

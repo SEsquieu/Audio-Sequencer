@@ -62,6 +62,9 @@ export interface DiffEngineDiagnostics {
   fallbackReason?: string;
   providerRawIntentCount?: number;
   providerCompiledPlanCount?: number;
+  providerCanonicalCommands?: string[];
+  rejectedProviderIntentCount?: number;
+  providerRawResponsePreview?: string;
 }
 
 export interface DiffEngineResult {

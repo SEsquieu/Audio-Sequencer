@@ -98,7 +98,12 @@ const parseOpenAiResponseToEnvelope = (payload: unknown): StructuredIntentEnvelo
   if (!outputText) {
     throw new Error("OpenAI response missing output text");
   }
-  return normalizeEnvelopeShape(JSON.parse(outputText));
+  return {
+    ...normalizeEnvelopeShape(JSON.parse(outputText)),
+    meta: {
+      rawResponsePreview: outputText.slice(0, 600),
+    },
+  };
 };
 
 export const createOpenAiIntentProvider = (): AiIntentProvider => {

@@ -4354,6 +4354,35 @@ function App() {
               {aiDiagnostics.usedFallback && <span>Fallback: {aiDiagnostics.fallbackReason ?? "Yes"}</span>}
             </div>
           )}
+          {import.meta.env.DEV && aiDiagnostics && (
+            <details className="ai-trace-panel">
+              <summary>AI Trace</summary>
+              <div className="ai-trace-grid">
+                {aiDiagnostics.providerCanonicalCommands && aiDiagnostics.providerCanonicalCommands.length > 0 && (
+                  <div>
+                    <div className="ai-trace-label">Canonical Commands</div>
+                    <div className="ai-trace-list">
+                      {aiDiagnostics.providerCanonicalCommands.map((cmd) => (
+                        <code key={cmd}>{cmd}</code>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {typeof aiDiagnostics.rejectedProviderIntentCount === "number" && (
+                  <div>
+                    <div className="ai-trace-label">Rejected Intents</div>
+                    <div className="ai-trace-value">{aiDiagnostics.rejectedProviderIntentCount}</div>
+                  </div>
+                )}
+                {aiDiagnostics.providerRawResponsePreview && (
+                  <div>
+                    <div className="ai-trace-label">Raw Provider Output (preview)</div>
+                    <pre className="ai-trace-pre">{aiDiagnostics.providerRawResponsePreview}</pre>
+                  </div>
+                )}
+              </div>
+            </details>
+          )}
           {filteredCandidates.length === 0 && !isAiGenerating && (
             <div className="ai-empty-state">
               {candidates.length > 0

@@ -82,6 +82,9 @@ export interface AiPromptContext {
 export interface StructuredIntentEnvelope {
   schema: "audio-sequencer.diff-intent.v1";
   intents: unknown[];
+  meta?: {
+    rawResponsePreview?: string;
+  };
 }
 
 export interface AiIntentProvider {

@@ -168,10 +168,13 @@ export const proposeDiffPatchCandidatesAsyncDetailed = async (request: DiffEngin
           signal,
         });
         diagnostics.providerRawIntentCount = envelope.intents.length;
-        const providerPlans = compileProviderIntentsToPlans(envelope, request);
-        diagnostics.providerCompiledPlanCount = providerPlans.length;
-        if (providerPlans.length > 0) {
-          const ranked = compileRankValidPlans(request, providerPlans);
+        diagnostics.providerRawResponsePreview = envelope.meta?.rawResponsePreview;
+        const providerCompile = compileProviderIntentsToPlans(envelope, request);
+        diagnostics.providerCanonicalCommands = providerCompile.canonicalCommands;
+        diagnostics.rejectedProviderIntentCount = providerCompile.rejectedIntentCount;
+        diagnostics.providerCompiledPlanCount = providerCompile.plans.length;
+        if (providerCompile.plans.length > 0) {
+          const ranked = compileRankValidPlans(request, providerCompile.plans);
           if (ranked.length > 0) {
             return {
               patches: ranked.map((candidate) => candidate.patch),
