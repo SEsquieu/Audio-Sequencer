@@ -20,15 +20,13 @@ Build a browser-based sequencer with:
 
 ## Current Phase (As of 2026-02-26)
 
-`AI patch pipeline expansion (Phase E in-progress)`
+`Phase F planning / alignment (Provider UX + stability hardening)`
 
 Current emphasis:
 
-- broaden parser/provider command coverage (especially track/bar controls)
-- improve provider prompt grounding and canonical-command alignment
-- tighten note-edit translation reliability (parser phrasing variants + provider examples)
-- improve provider-to-parser translation resilience (repair/splitting of near-valid command output)
-- continue UX polish for Smart Patch/provider settings and diagnostics
+- lock Phase F scope and success criteria before implementation
+- preserve Phase E gains while shifting focus from capability expansion to reliability/polish
+- prioritize provider UX trust (status, timeouts, fallback clarity) over new command vocabulary
 
 ## Execution Discipline (Cross-Workstation Safety)
 
@@ -43,17 +41,17 @@ To reduce ambiguity during fast iteration (especially across multiple workstatio
 ### Current Working Rules
 
 - Do not treat parser alias additions as substitutes for missing typed actions
-- Keep Phase E work focused on capability expansion (new action families + compiler support)
+- Keep Phase F work focused on provider UX/stability hardening (not major capability expansion)
 - Keep deterministic parser and provider command vocabulary aligned
 - Preserve local validation/patch compilation as the only state mutation path
 
-### Current Phase E Goals (Active)
+### Phase F Goals (Planned / Alignment)
 
-1. Expand typed action coverage for pattern and arrangement edits
-2. Expand deterministic parser phrasing for already-supported actions
-3. Improve provider grounding/context (track/bar/pattern summaries) without large token growth
-4. Reduce ambiguous prompt outcomes with clearer action semantics and candidate labels
-5. Commit checkpoints frequently during feature expansion to preserve context continuity
+1. Make provider readiness/status updates reliable and understandable
+2. Make timeout/fallback behavior explicit in Smart Patch UI (no silent confusion)
+3. Improve provider request lifecycle (probe timing, cancelation, stale response handling)
+4. Reduce surprise permission/network prompts via smarter probe strategy
+5. Preserve local-first fallback and diff safety invariants during all provider failures
 
 ## Completed Milestones
 
@@ -82,16 +80,18 @@ To reduce ambiguity during fast iteration (especially across multiple workstatio
 - Provider diagnostics + Smart Patch debug trace panel
 - Typed action expansion for track/bar and FX-related operations
 - Provider sequence-candidate grouping for multi-step pattern edits
+- Phase E typed action expansion for note/pattern/arrangement edits (broad coverage checkpoint)
+- Drum groove parser macros + typed batched drum-step provider path (`set_drum_steps` -> `set_drum_step_batch`)
 
 ## Active Focus (Near-Term)
 
-### 1. Parser / Command Coverage Expansion
+### 1. Phase F Definition + UX Reliability Prep
 
 Priority: `High`
 
-- Expand canonical commands for track/bar manipulation
-- Keep rule parser, provider prompts, and typed intent compiler aligned
-- Add prompt examples that bias providers toward supported track/bar operations
+- Finalize Phase F scope, success criteria, and out-of-scope list before implementation
+- Keep current Phase E command coverage stable while shifting effort to provider UX reliability
+- Tie known provider UX issues (for example `KB-001`) to concrete Phase F tasks
 
 ### 2. Provider UX Reliability / Feedback
 
@@ -101,6 +101,7 @@ Priority: `Medium`
 - Probe on relevant settings saves (model/API key/provider selection)
 - Improve readiness/error messaging clarity
 - Revisit provider probe strategy to avoid surprise permission/network prompts (lazy + selected-provider-first checks)
+- Clarify timeout vs parse-failure vs fallback messaging in Smart Patch diagnostics/UI
 
 ### 3. Documentation / Context Resilience
 
@@ -112,20 +113,32 @@ Priority: `Medium`
 
 ## Planned Next Phases (Tentative)
 
-### Phase E (Continue): AI Command + Intent Expansion
+### Phase E (Completed): AI Command + Intent Expansion
 
-- Broaden supported commands across:
-  - track/bar operations
-  - pattern edits
-  - selective note-step edits (including add/remove/retune note flows)
-- Improve typed intent compilation coverage and confidence gating
-- Increase provider prompt parity (Ollama / OpenAI / Anthropic)
+- Expanded typed action coverage across sound, FX, routing, pattern, and arrangement edits
+- Added typed note-level pattern edits and polyphonic targeting flows
+- Added batched drum-step typed action path for compact groove edits
+- Significantly expanded parser phrasing and groove macros for deterministic local edits
+- Improved provider prompt parity, examples, and provider-to-parser translation resilience
 
 ### Phase F: Provider UX / Stability Hardening
 
-- Better health probe lifecycle and status refresh behavior
-- Timeout/error handling polish in Smart Patch UI
-- Safer fallback messaging and diagnostics surfacing
+- Scope
+- Provider readiness lifecycle hardening (`Checking…` stale state, save-triggered reprobes, selected-provider-first probes)
+- Timeout/cancel/error/fallback messaging clarity in Smart Patch drawer + diagnostics row/trace
+- Request lifecycle correctness (cancelation, stale response handling, status reset behavior)
+- Preserve local fallback behavior and clear user trust signals while provider requests fail/timeout
+
+- Success Criteria
+- Provider status updates reflect current state without requiring drawer reopen in common flows
+- Users can distinguish timeout vs invalid output vs fallback in the UI/diagnostics
+- Provider probes do not run eagerly on page load and are scoped to relevant provider interactions
+- No regressions to local rule-parser/smartPatch generation paths
+
+- Out of Scope (Phase F)
+- Major new parser/typed action capability expansion
+- New hosted provider backend implementation
+- Broad Smart Patch layout redesign
 
 ### Phase G: Advanced AI Editing Controls (Later)
 
@@ -141,11 +154,10 @@ Priority: `Medium`
 
 ## P1 (Near-term, meaningful impact)
 
-- Expand provider prompt examples for track/bar commands across all providers
-- Expand provider multi-intent examples (short drum/note sequences) across all providers
-- Add parser/compiler coverage tests (or lightweight fixtures) for canonical commands
+- Add parser/compiler coverage tests (or lightweight fixtures) for canonical commands and typed actions
 - Tighten provider status refresh after settings changes
-- Continue pattern/note command coverage expansion before deeper insert-control work
+- Implement selected-provider-first probe strategy and save-triggered reprobes
+- Clarify timeout/fallback diagnostics messaging and UI labels
 
 ## P2 (Important, but can follow current phase)
 
