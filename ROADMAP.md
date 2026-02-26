@@ -147,8 +147,75 @@ Priority: `Medium`
 
 - Deeper insert FX parameter control workflows (broader than current basic support)
 - More arrangement-level edits
-- Optional speech-to-prompt input (push-to-talk mic -> transcript -> existing prompt pipeline)
 - Possibly provider streaming or richer hosted-provider integration (if/when needed)
+
+#### Phase G+: Procedural Prompting DSL (Strudel-inspired) + LLM Translation Fallback (Later)
+
+- Product intent
+- "Strudel brains + sequencer hands": procedural shorthand for sequencing + sound/mix edits with instant deterministic parsing first, plus LLM fallthrough for ambiguous text that translates into DSL or typed plans.
+- Preserve current local-first mutation guarantees: no direct state edits from providers, no raw patch-path authoring by models.
+
+- Architecture layering (modular, future-safe)
+- Prompt Layer
+- User text + selected scope + locks + mode (`quick` / `precise` / `creative`)
+- Deterministic DSL / Parser Layer (fast path)
+- "No inference required" for direct DSL / regex hits
+- LLM Translator Layer (fallback adapter)
+- Ambiguous text -> DSL command string OR versioned `PatchPlanV1`
+- Never raw patch paths; never direct state mutation
+- Plan Normalizer
+- Versioned plan schema normalization (`v1` first, future-version tolerant)
+- Compiler plugins -> `JsonPatchOp[]`
+- Domain compiler plugins (pattern / sound / routing / FX / arrangement) compile normalized plans into patch ops
+- Validator / Repair
+- v1 default behavior: reject + retry + fallback (no complex repair required initially)
+- PatchMeta presenter + audition / undo
+- Existing patch preview, affected scope/paths, audition, accept/reject, undo pipeline remains the execution surface
+
+- Minimal v1 DSL grammar proposal (small by design)
+- Scope selectors
+- `t("lead")`, `t(3)`, `bars(5,8)`, `loop()`, `selected()`
+- Pattern primitives
+- `kick(4)`, `hats(8)`, `snare(2,on=3)`, `euclid(k,n)`, `density(+/-)`, `fill(prob)`, `swing(x)`, `humanize(time,vel)`, `shift(div)`, `rotate(n)`
+- Sound / mix primitives
+- `warmth(+x)`, `space(+x)`, `width(+x)`, `cutoff(hz)`, `drive(x)`, `reverb(x,bus="A")`, `delay(x,time="3/16",bus="B")`
+- Chaining
+- Allow multiple commands in one line, for example: `t("drums") bars(1,4) kick(4) hats(8) swing(.12)`
+
+- Guardrails
+- LLM is an adapter, not an editor: it outputs bounded DSL or versioned plans only
+- Always show affected scope/paths and cost classification (`low` / `med` / `high`) before apply
+- Live-safe policy while playing: prefer low-cost (param/send) changes; gate high-cost (arrangement) behind confirm
+- Versioned plan schema; compiler supports `v1` and normalizes future versions
+
+- UX plan (later)
+- "Spellbook" command bar with autocomplete, syntax highlighting, and friendly parser errors
+- Chips/runes rendering for parsed commands (visible structure before apply)
+- "Deep edit" action/button to escalate provider selection + context only when deterministic parsing is insufficient
+
+- Provider routing note
+- Keep existing router model/provider infrastructure
+- Add deterministic `dsl_local` provider role (fast parser path)
+- Add `llm_translate` provider role (same providers, different prompt contract: ambiguous text -> DSL/plan only)
+
+- Phasing (within this future DSL track)
+- `G1`: Macro registry + param alias registry + tiny AST parser -> `PatchPlanV1`
+- `G2`: DSL UI polish + autocomplete + examples
+- `G3`: LLM translation fallback (ambiguous -> DSL/plan) with strict JSON/DSL-only outputs
+- `G4`: Expanded procedural ops (seeded randomness, ranges, constraints) + deterministic replay
+- `G5`: Optional multi-turn refine-last-change loop / patch threads (`later-later`)
+
+- Out of scope for this future plan (and for now)
+- Not part of Phase F
+- Not required for current provider UX hardening
+- Keep STT / voice input as a separate future phase (do not couple modality to DSL architecture)
+
+### Phase H: Voice Prompt Input (STT) (Later)
+
+- Push-to-talk speech-to-text as an input modality into the existing prompt box / Smart Patch pipeline
+- Browser-native STT first (explicit user-triggered mic permission flow)
+- Keep STT modular and independent from DSL/translator work so either can ship alone
+- Reuse existing parser/provider pipeline after transcript capture (no direct mutation path)
 
 ## Prioritized Planned Features / Work Items
 
@@ -170,8 +237,8 @@ Priority: `Medium`
 - Extended power-user provider settings UX polish
 - Deeper AI trace tooling improvements
 - Broader docs/examples for advanced local model setups
-- Voice prompt UX exploration (browser-native STT first, explicit user-triggered mic permissions)
-- Power-user procedural prompting UX (range/constraint syntax + pseudorandom note placement controls)
+- Voice prompt UX exploration (browser-native STT first, explicit user-triggered mic permissions) - track under Phase H
+- Power-user procedural prompting UX (range/constraint syntax + pseudorandom note placement controls) - track under Phase G+ DSL plan
 
 ## How To Maintain This File
 
