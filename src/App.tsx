@@ -191,6 +191,59 @@ const isAiPatchInSelectedTrackScope = (patch: PatchMeta, selectedTrackIndex: num
   return touchedTracks.every((index) => index === selectedTrackIndex);
 };
 
+const normalizeAiPromptText = (text: string): string => text.toLowerCase().trim().replace(/\s+/g, " ");
+
+const getExplicitAiPromptTrackScope = (song: SongState, promptText: string): Set<number> | null => {
+  const hay = normalizeAiPromptText(promptText);
+  if (!hay) {
+    return null;
+  }
+
+  let bestScore = 0;
+  const exactMatches = new Set<number>();
+  for (let i = 0; i < song.tracks.length; i += 1) {
+    const track = song.tracks[i];
+    const candidates = [track.name, track.id].map((value) => value.toLowerCase().trim()).filter(Boolean);
+    for (const candidate of candidates) {
+      if (!candidate || !hay.includes(candidate)) {
+        continue;
+      }
+      if (candidate.length > bestScore) {
+        bestScore = candidate.length;
+        exactMatches.clear();
+        exactMatches.add(i);
+      } else if (candidate.length === bestScore) {
+        exactMatches.add(i);
+      }
+    }
+  }
+  if (exactMatches.size > 0) {
+    return exactMatches;
+  }
+
+  if (/\bdrums?\b/.test(hay)) {
+    const drumIndices = song.tracks
+      .map((track, index) => (track.type === "drums" ? index : -1))
+      .filter((index) => index >= 0);
+    return drumIndices.length > 0 ? new Set(drumIndices) : null;
+  }
+  if (/\bsynth\b/.test(hay)) {
+    const synthIndices = song.tracks
+      .map((track, index) => (track.type === "synth" ? index : -1))
+      .filter((index) => index >= 0);
+    return synthIndices.length > 0 ? new Set(synthIndices) : null;
+  }
+  return null;
+};
+
+const isAiPatchInTrackScopeSet = (patch: PatchMeta, allowedTrackIndices: Set<number>): boolean => {
+  const touchedTracks = getPatchedTrackIndices(patch);
+  if (touchedTracks.length === 0) {
+    return true;
+  }
+  return touchedTracks.every((index) => allowedTrackIndices.has(index));
+};
+
 const formatPatchPath = (path: string): string =>
   path
     .replace(/^\/tracks\/(\d+)\//, "track[$1].")
@@ -718,16 +771,23 @@ function App() {
     const selectedTrackIndex =
       track?.id != null ? committedSong.tracks.findIndex((t) => t.id === track.id) : -1;
     const selectedIndexOrNull = selectedTrackIndex >= 0 ? selectedTrackIndex : null;
+    const explicitPromptTrackScope = getExplicitAiPromptTrackScope(committedSong, lastSubmittedPrompt);
     return candidates.filter((candidate) => {
-      if (aiSelectedTrackOnly && !isAiPatchInSelectedTrackScope(candidate, selectedIndexOrNull)) {
-        return false;
+      if (aiSelectedTrackOnly) {
+        if (explicitPromptTrackScope) {
+          if (!isAiPatchInTrackScopeSet(candidate, explicitPromptTrackScope)) {
+            return false;
+          }
+        } else if (!isAiPatchInSelectedTrackScope(candidate, selectedIndexOrNull)) {
+          return false;
+        }
       }
       if (aiLiveSafeWhilePlaying && isPlaying && !isAiPatchLiveSafe(candidate)) {
         return false;
       }
       return true;
     });
-  }, [aiLiveSafeWhilePlaying, aiSelectedTrackOnly, candidates, committedSong.tracks, isPlaying, track?.id]);
+  }, [aiLiveSafeWhilePlaying, aiSelectedTrackOnly, candidates, committedSong, isPlaying, lastSubmittedPrompt, track?.id]);
   const patternId = track?.lane[selectedBar] ?? track?.lane[0];
   const pattern = patternId ? track?.patterns[patternId] : undefined;
   const playheadPatternId = track?.lane[playhead.bar] ?? track?.lane[0];

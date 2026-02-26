@@ -238,10 +238,80 @@ const parseOccurrenceToken = (raw?: string | null): number | null => {
   return n - 1;
 };
 
+const resolveTrackScopePrefix = (
+  song: SongState,
+  text: string,
+  selectedTrackId?: string
+): { text: string; trackIndexOverride: number | null } => {
+  const prefixMatch = text.match(/^([^:]{1,48}):\s+(.+)$/);
+  if (!prefixMatch) {
+    return { text, trackIndexOverride: null };
+  }
+  const prefix = norm(prefixMatch[1]);
+  const rest = norm(prefixMatch[2]);
+  if (!rest) {
+    return { text, trackIndexOverride: null };
+  }
+
+  let bestIdx = -1;
+  let bestScore = 0;
+  for (let i = 0; i < song.tracks.length; i += 1) {
+    const track = song.tracks[i];
+    const name = track.name.toLowerCase().trim();
+    const id = track.id.toLowerCase().trim();
+    if (name && prefix === name && name.length > bestScore) {
+      bestIdx = i;
+      bestScore = name.length;
+    }
+    if (id && prefix === id && id.length > bestScore) {
+      bestIdx = i;
+      bestScore = id.length;
+    }
+  }
+  if (bestIdx >= 0) {
+    return { text: rest, trackIndexOverride: bestIdx };
+  }
+
+  if (/^drums?$/.test(prefix)) {
+    const drumIndices = song.tracks
+      .map((track, index) => (track.type === "drums" ? index : -1))
+      .filter((index) => index >= 0);
+    if (drumIndices.length === 1) {
+      return { text: rest, trackIndexOverride: drumIndices[0] };
+    }
+    if (selectedTrackId) {
+      const selectedIdx = song.tracks.findIndex((track) => track.id === selectedTrackId);
+      if (selectedIdx >= 0 && song.tracks[selectedIdx]?.type === "drums") {
+        return { text: rest, trackIndexOverride: selectedIdx };
+      }
+    }
+  }
+
+  if (/^synths?$/.test(prefix)) {
+    const synthIndices = song.tracks
+      .map((track, index) => (track.type === "synth" ? index : -1))
+      .filter((index) => index >= 0);
+    if (synthIndices.length === 1) {
+      return { text: rest, trackIndexOverride: synthIndices[0] };
+    }
+    if (selectedTrackId) {
+      const selectedIdx = song.tracks.findIndex((track) => track.id === selectedTrackId);
+      if (selectedIdx >= 0 && song.tracks[selectedIdx]?.type === "synth") {
+        return { text: rest, trackIndexOverride: selectedIdx };
+      }
+    }
+  }
+
+  return { text, trackIndexOverride: null };
+};
+
 export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPlanCandidate[] => {
-  const text = norm(request.prompt);
+  const normalizedPrompt = norm(request.prompt);
+  const scopedPrompt = resolveTrackScopePrefix(request.song, normalizedPrompt, request.scope.selectedTrackId);
+  const text = scopedPrompt.text;
   const song = request.song;
-  const trackIndex = findTrackIndex(song, text, request.scope.selectedTrackId);
+  const trackIndex =
+    scopedPrompt.trackIndexOverride ?? findTrackIndex(song, normalizedPrompt, request.scope.selectedTrackId);
   const track = song.tracks[trackIndex];
   const candidates: DiffPlanCandidate[] = [];
 
@@ -660,11 +730,16 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     }
 
     match = text.match(
-      /^(?:(add|remove|delete|turn on|turn off)\s+)?(kick|snare|hat)\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(on|off|[\d.]+%?))?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      /^(?:(add|remove|delete|turn on|turn off)\s+)?(kick|snare|hat)\s+(?:at\s+)?step\s+(\d{1,2})\s+(on|off|[\d.]+%?)\s+(?:on|to)\s+.+?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
     );
     if (!match) {
       match = text.match(
-        /^(?:turn\s+)?(kick|snare|hat)\s+(on|off)\s+(?:at\s+)?(?:step\s+)?(\d{1,2})(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+        /^(?:(add|remove|delete|turn on|turn off)\s+)?(kick|snare|hat)\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(on|off|[\d.]+%?))?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+(?:on|to)\s+.+)?$/
+      );
+    }
+    if (!match) {
+      match = text.match(
+        /^(?:turn\s+)?(kick|snare|hat)\s+(on|off)\s+(?:at\s+)?(?:step\s+)?(\d{1,2})(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+(?:on|to)\s+.+)?$/
       );
       if (match) {
         match = [match[0], `turn ${match[2]}`, match[1], match[3], match[2], match[4]] as RegExpMatchArray;

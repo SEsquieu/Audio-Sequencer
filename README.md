@@ -102,5 +102,6 @@ This repo is intended to deploy from `main` (for example via Vercel). Pushes to 
 - Provider API keys/model overrides are stored in local browser storage.
 - The app still falls back to local patch generation when provider output is unavailable, invalid, or times out.
 - `New Song` resets arrangement/history state.
+- See `AI_COMMAND_CHEATSHEET.md` for parser-safe / local-model-friendly Smart Patch prompt examples.
 - See `ROADMAP.md` for the current phase plan and prioritized feature roadmap.
 - See `KNOWN_BUGS.md` for triaged UI/behavior issues and polish backlog items.
