@@ -125,6 +125,35 @@ const parseIntentEnvelopeFromText = (text: string): StructuredIntentEnvelope => 
   },
 });
 
+const DEFAULT_SUPPORTED_COMMANDS = [
+  "tempo <bpm>",
+  "swing <percent>%",
+  "eco mode on|off",
+  "master safety on|off",
+  "master safety amount <percent>%",
+  "<track> gain <percent>%",
+  "lower <track> gain",
+  "raise <track> gain",
+  "lower <track> gain by <percent>%",
+  "raise <track> gain by <percent>%",
+  "<track> delay <percent>%",
+  "<track> reverb <percent>%",
+  "<track> delay bus custom|echo a|echo b",
+  "<track> reverb bus custom|room a|hall b",
+  "add chorus to <track>",
+  "add dj filter to <track>",
+  "add saturator to <track>",
+  "add eq3 to <track>",
+];
+
+const formatSupportedCommandList = (context?: AiPromptContext) => {
+  const commands =
+    context?.supportedCanonicalCommands && context.supportedCanonicalCommands.length > 0
+      ? context.supportedCanonicalCommands
+      : DEFAULT_SUPPORTED_COMMANDS;
+  return commands.map((command) => `  - "${command}"`).join("\n");
+};
+
 const buildPrompt = (prompt: string, context?: AiPromptContext): string => `
 You convert user requests into canonical audio sequencer commands.
 Return ONLY JSON with this exact schema:
@@ -136,25 +165,8 @@ Rules:
 - If you are unsure, emit your best guess as one canonical command instead of an empty result.
 - If the user does not explicitly name a track, target the selected track from Context.
 - Do not invent track names. Use exact names from Context.tracks when possible.
-- Use ONLY commands from this supported set:
-  - "tempo <bpm>"
-  - "swing <percent>%"
-  - "eco mode on|off"
-  - "master safety on|off"
-  - "master safety amount <percent>%"
-  - "<track> gain <percent>%"
-  - "lower <track> gain"
-  - "raise <track> gain"
-  - "lower <track> gain by <percent>%"
-  - "raise <track> gain by <percent>%"
-  - "<track> delay <percent>%"
-  - "<track> reverb <percent>%"
-  - "<track> delay bus custom|echo a|echo b"
-  - "<track> reverb bus custom|room a|hall b"
-  - "add chorus to <track>"
-  - "add dj filter to <track>"
-  - "add saturator to <track>"
-  - "add eq3 to <track>"
+- Use ONLY commands from this supported set (prefer exact phrasing):
+${formatSupportedCommandList(context)}
 - Prefer exact track names from the provided track list.
 - If unsupported or ambiguous, return an empty intents array.
 - No markdown. No prose outside JSON.
@@ -163,6 +175,8 @@ Examples:
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"lead delay 35%","confidence":0.84}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add chorus to lead","confidence":0.78}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"lower bass gain","confidence":0.82}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"copy lead bar 1 to bar 5","confidence":0.79}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"transpose lead up 2 in bar 3","confidence":0.76}]}
 
 Context:
 ${JSON.stringify(

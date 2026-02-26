@@ -24,6 +24,8 @@ const SUPPORTED_CANONICAL_COMMANDS = [
   "rotate <track> bars <from>-<to> by <steps>",
   "kick|snare|hat step <n> on|off|<percent>",
   "transpose <track> up|down <semitones> [in bar <n>]",
+  "velocity step <n> <percent>% on <track> [in bar <n>]",
+  "length step <n> <steps> on <track> [in bar <n>]",
 ];
 
 const summarizeFxParams = (fx: SongState["tracks"][number]["insertFx"][number]["params"]) => {
