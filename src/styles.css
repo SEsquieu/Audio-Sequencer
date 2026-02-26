@@ -1632,8 +1632,20 @@ select {
     gap: 0.08rem;
   }
 
+  .topbar-brand {
+    gap: 0.35rem;
+  }
+
+  .topbar-logo {
+    width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 0.25rem;
+  }
+
   .topbar h1 {
-    display: none;
+    display: block;
+    font-size: 0.72rem;
+    max-width: 100%;
   }
 
   .top-controls {
