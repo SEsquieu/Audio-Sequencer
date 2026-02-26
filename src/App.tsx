@@ -1972,6 +1972,7 @@ function App() {
   };
 
   const aiFallbackState = aiDiagnostics?.usedFallback ? classifyAiFallbackReason(aiDiagnostics.fallbackReason) : null;
+  const aiProviderRouteStatusLabel = isAiGenerating ? "Running" : aiDiagnostics?.usedFallback ? "Fallback" : aiDiagnostics ? "Completed" : "Idle";
   const aiNoProposalMessage =
     candidates.length > 0
       ? "No proposals match the current AI filters. Toggle Selected Track Only or Live-Safe While Playing."
@@ -4426,6 +4427,7 @@ function App() {
           {aiDiagnostics && (
             <div className="ai-debug-state">
               <strong>{aiDiagnostics.selectedProviderId}</strong>
+              <span className="ai-debug-pill">{aiProviderRouteStatusLabel}</span>
               <span>{aiDiagnostics.routeReason}</span>
               {aiDiagnostics.usedFallback && (
                 <span title={aiFallbackState?.detail}>
@@ -4638,6 +4640,16 @@ function App() {
                 .map((provider) => {
                   const health = aiProviderHealth[provider.id];
                   const isPending = aiProviderHealthPending[provider.id];
+                  const statusClassName =
+                    provider.availability === "unavailable"
+                      ? "warn"
+                      : isPending
+                        ? "pending"
+                        : health
+                          ? health.ok
+                            ? "ok"
+                            : "error"
+                          : "idle";
                   const statusLabel =
                     provider.availability === "unavailable"
                       ? provider.unavailableReason ?? "Unavailable"
@@ -4651,7 +4663,7 @@ function App() {
                   return (
                     <div key={provider.id} className="ai-provider-status-item">
                       <span>{provider.label}</span>
-                      <span className={health?.ok ? "ok" : provider.availability === "unavailable" ? "warn" : ""}>{statusLabel}</span>
+                      <span className={statusClassName}>{statusLabel}</span>
                     </div>
                   );
                 })}

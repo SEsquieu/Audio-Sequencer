@@ -2605,6 +2605,18 @@ input[type="range"] {
   color: #86efac;
 }
 
+.ai-provider-status-item .pending {
+  color: #93c5fd;
+}
+
+.ai-provider-status-item .idle {
+  color: #9ca3af;
+}
+
+.ai-provider-status-item .error {
+  color: #fca5a5;
+}
+
 .ai-provider-status-item .warn {
   color: #fcd34d;
 }
@@ -2700,6 +2712,20 @@ input[type="range"] {
 .ai-debug-state strong {
   color: #e7fff0;
   font-size: 0.74rem;
+}
+
+.ai-debug-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid #1f3b2c;
+  border-radius: 999px;
+  background: #07110c;
+  color: #d7ffee;
+  padding: 0.08rem 0.38rem;
+  font-size: 0.63rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .ai-trace-panel {
