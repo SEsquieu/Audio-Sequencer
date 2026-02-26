@@ -547,6 +547,7 @@ function App() {
     () => getStoredProviderModel("user-api-anthropic") || "claude-3-5-haiku-latest"
   );
   const [aiProviderHealth, setAiProviderHealth] = useState<Partial<Record<AiProviderId, { ok: boolean; reason?: string }>>>({});
+  const [aiProviderHealthPending, setAiProviderHealthPending] = useState<Partial<Record<AiProviderId, boolean>>>({});
   const aiProviderProbeSeqRef = useRef(0);
   const aiRequestSeqRef = useRef(0);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
@@ -1808,6 +1809,13 @@ function App() {
       }
       return next;
     });
+    setAiProviderHealthPending((prev) => {
+      const next = { ...prev };
+      for (const providerId of orderedTargetIds) {
+        next[providerId] = true;
+      }
+      return next;
+    });
 
     const applyResult = (providerId: AiProviderId, health: { ok: boolean; reason?: string }) => {
       if (probeSeq !== aiProviderProbeSeqRef.current) {
@@ -1817,6 +1825,10 @@ function App() {
         ...prev,
         [providerId]: { ok: health.ok, reason: health.reason },
       }));
+      setAiProviderHealthPending((prev) => ({
+        ...prev,
+        [providerId]: false,
+      }));
     };
 
     const [firstProviderId, ...restProviderIds] = orderedTargetIds;
@@ -1824,6 +1836,8 @@ function App() {
       const firstHealth = await probeAiProviderHealth(firstProviderId);
       if (firstHealth) {
         applyResult(firstProviderId, firstHealth);
+      } else {
+        setAiProviderHealthPending((prev) => ({ ...prev, [firstProviderId]: false }));
       }
     }
     await Promise.all(
@@ -1831,6 +1845,8 @@ function App() {
         const health = await probeAiProviderHealth(providerId);
         if (health) {
           applyResult(providerId, health);
+        } else {
+          setAiProviderHealthPending((prev) => ({ ...prev, [providerId]: false }));
         }
       })
     );
@@ -1840,7 +1856,15 @@ function App() {
     if (!isAiOpen) {
       return;
     }
-    void refreshAiProviderHealth();
+    const selectedProvider =
+      aiProviderPreference === "ollama-local" ||
+      aiProviderPreference === "user-api-openai" ||
+      aiProviderPreference === "user-api-anthropic"
+        ? (aiProviderPreference as AiProviderId)
+        : null;
+    if (selectedProvider) {
+      void refreshAiProviderHealth([selectedProvider]);
+    }
     return () => {
       aiProviderProbeSeqRef.current += 1;
     };
@@ -4579,6 +4603,19 @@ function App() {
         <details className="ai-panel-collapse ai-panel-collapse-inline">
           <summary>AI Provider Settings</summary>
           <div className="ai-collapse-body">
+            {(aiProviderPreference === "ollama-local" ||
+              aiProviderPreference === "user-api-openai" ||
+              aiProviderPreference === "user-api-anthropic") && (
+              <div className="ai-provider-key-row" style={{ marginBottom: "0.55rem" }}>
+                <button
+                  type="button"
+                  onClick={() => refreshAiProviderHealth([aiProviderPreference as AiProviderId])}
+                  disabled={isAiGenerating || !!aiProviderHealthPending[aiProviderPreference as AiProviderId]}
+                >
+                  {aiProviderHealthPending[aiProviderPreference as AiProviderId] ? "Refreshing…" : "Refresh Status"}
+                </button>
+              </div>
+            )}
             <div className="ai-provider-status-list">
               {aiProviderDescriptors
                 .filter(
@@ -4587,14 +4624,17 @@ function App() {
                 )
                 .map((provider) => {
                   const health = aiProviderHealth[provider.id];
+                  const isPending = aiProviderHealthPending[provider.id];
                   const statusLabel =
                     provider.availability === "unavailable"
                       ? provider.unavailableReason ?? "Unavailable"
+                      : isPending
+                        ? "Checking…"
                       : health
                         ? health.ok
                           ? "Ready"
                           : `Issue: ${health.reason ?? "Unreachable"}`
-                        : "Checking…";
+                        : "Not checked";
                   return (
                     <div key={provider.id} className="ai-provider-status-item">
                       <span>{provider.label}</span>
