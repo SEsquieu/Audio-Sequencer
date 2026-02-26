@@ -365,7 +365,120 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     }
 
     match = text.match(
-      /^(kick|snare|hat)\s+(on|off|[\d.]+%?)\s+(?:at\s+)?step\s+(\d{1,2}(?:\s*(?:,|and)\s*(?:step\s+)?\d{1,2})*)(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      /^(kick|snare|hat)(?:\s+(?:and\s+)?(kick|snare|hat))(?:\s+(?:and\s+)?(kick|snare|hat))?\s+(on|off|[\d.]+%?)\s+(?:at\s+)?step\s+(\d{1,2}(?:\s*(?:,|and)\s*(?:step\s+)?\d{1,2})*)(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+(?:on|to)\s+.+)?$/
+    );
+    if (match && track.type === "drums") {
+      const lanes = [match[1], match[2], match[3]]
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .map((value) => value as "kick" | "snare" | "hat");
+      const uniqueLanes = [...new Set(lanes)];
+      const stepValue = parseStepValue(match[4]);
+      const barIndex = clamp(
+        (match[6] ? Math.round(Number(match[6])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      if (stepValue !== null && patternId && patternId !== "0" && uniqueLanes.length >= 2) {
+        const stepTokens = [...match[5].matchAll(/\d{1,2}/g)].map((m) => clamp(Math.round(Number(m[0])) - 1, 0, 15));
+        const uniqueStepIndexes = [...new Set(stepTokens)];
+        if (uniqueStepIndexes.length > 0) {
+          const ops: JsonPatchOp[] = [];
+          for (const stepIndex of uniqueStepIndexes) {
+            for (const lane of uniqueLanes) {
+              ops.push({
+                op: "replace",
+                path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${lane}`,
+                value: stepValue,
+              });
+            }
+          }
+          candidates.push(
+            wrapPatchCandidate(
+              `Set ${track.name} Drum Lanes + Steps`,
+              `Set ${uniqueLanes.join(", ")} on steps ${uniqueStepIndexes.map((idx) => idx + 1).join(", ")} in bar ${barIndex + 1}`,
+              ops,
+              0.986
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
+      /^(kick|snare|hat)(?:\s+(?:and\s+)?(kick|snare|hat))(?:\s+(?:and\s+)?(kick|snare|hat))?\s+(?:at\s+)?step\s+(\d{1,2})\s+(on|off|[\d.]+%?)(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+(?:on|to)\s+.+)?$/
+    );
+    if (match && track.type === "drums") {
+      const lanes = [match[1], match[2], match[3]]
+        .filter((value): value is string => typeof value === "string" && value.length > 0)
+        .map((value) => value as "kick" | "snare" | "hat");
+      const uniqueLanes = [...new Set(lanes)];
+      const stepIndex = clamp(Math.round(Number(match[4])) - 1, 0, 15);
+      const stepValue = parseStepValue(match[5]);
+      const barIndex = clamp(
+        (match[6] ? Math.round(Number(match[6])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      if (stepValue !== null && patternId && patternId !== "0" && uniqueLanes.length >= 2) {
+        const ops = uniqueLanes.map((lane) => ({
+          op: "replace" as const,
+          path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${lane}`,
+          value: stepValue,
+        }));
+        candidates.push(
+          wrapPatchCandidate(
+            `Set ${track.name} Drum Lanes`,
+            `Set ${uniqueLanes.join(", ")} on step ${stepIndex + 1} in bar ${barIndex + 1}`,
+            ops,
+            0.985
+          )
+        );
+        return candidates;
+      }
+    }
+
+    match = text.match(
+      /^(?:give me\s+)?(?:a\s+)?(?:4|four)\s+on\s+the\s+floor\s+kick(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (match && track.type === "drums") {
+      const barIndex = clamp(
+        (match[1] ? Math.round(Number(match[1])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "drums") {
+        const targetSteps = [0, 4, 8, 12];
+        const ops: JsonPatchOp[] = [];
+        for (const stepIndex of targetSteps) {
+          if (pattern.steps[stepIndex]?.kick !== 1) {
+            ops.push({
+              op: "replace",
+              path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/kick`,
+              value: 1,
+            });
+          }
+        }
+        if (ops.length > 0) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Set ${track.name} Four-on-the-Floor Kick`,
+              `Place kick on steps 1, 5, 9, 13 in bar ${barIndex + 1}`,
+              ops,
+              0.99
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
+      /^(kick|snare|hat)\s+(on|off|[\d.]+%?)\s+(?:at\s+)?step\s+(\d{1,2}(?:\s*(?:,|and)\s*(?:step\s+)?\d{1,2})*)(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+(?:on|to)\s+.+)?$/
     );
     if (match && track.type === "drums") {
       const lane = match[1] as "kick" | "snare" | "hat";

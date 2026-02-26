@@ -213,6 +213,41 @@ const normalizeText = (text: string) =>
     .replace(/\becho\b/g, "delay")
     .replace(/\bverb\b/g, "reverb");
 
+const repairCanonicalCommandForParser = (command: string): string => {
+  const text = normalizeText(command);
+
+  // Convert compact repeated-lane shorthand emitted by some local models:
+  // "kick step 1 on|9 on drums" -> "kick on step 1 and 9 on drums"
+  const repeatedLaneMatch = text.match(
+    /^(kick|snare|hat)\s+step\s+((?:\d{1,2}\s+(?:on|off|[\d.]+%?))(?:\s*(?:\||,|and)\s*\d{1,2}\s+(?:on|off|[\d.]+%?))+)(.*)$/
+  );
+  if (repeatedLaneMatch) {
+    const lane = repeatedLaneMatch[1];
+    const sequence = repeatedLaneMatch[2];
+    const tail = (repeatedLaneMatch[3] ?? "").trim();
+    const pairs = [...sequence.matchAll(/(\d{1,2})\s+(on|off|[\d.]+%?)/g)].map((m) => ({
+      step: m[1],
+      value: m[2],
+    }));
+    if (pairs.length >= 2) {
+      const firstValue = pairs[0].value;
+      const sameValue = pairs.every((pair) => pair.value === firstValue);
+      if (sameValue) {
+        const stepList = pairs.map((pair) => pair.step).join(" and ");
+        const normalizedTail =
+          !tail
+            ? ""
+            : /^(?:on|to|in\s+bar|bar)\b/.test(tail)
+              ? tail
+              : `on ${tail}`;
+        return `${lane} ${firstValue} step ${stepList}${normalizedTail ? ` ${normalizedTail}` : ""}`.trim();
+      }
+    }
+  }
+
+  return text;
+};
+
 const containsAny = (text: string, patterns: RegExp[]) => patterns.some((pattern) => pattern.test(text));
 
 const resolveTrackName = (request: DiffEngineRequest, requested?: string): string => {
@@ -1107,11 +1142,13 @@ export const compileProviderIntentsToPlans = (
       const syntheticCanonical = toCanonicalCommand(rawIntent, request);
       if (syntheticCanonical) {
         canonicalCommands.push(syntheticCanonical.command);
-        const adjusted = adjustConfidenceForPromptAlignment(request, syntheticCanonical.command, typedPlan.confidence);
+        const repairedSyntheticCommand = repairCanonicalCommandForParser(syntheticCanonical.command);
+        const adjusted = adjustConfidenceForPromptAlignment(request, repairedSyntheticCommand, typedPlan.confidence);
         if (adjusted.rejectReason) {
           rejectedIntentCount += 1;
           continue;
         }
+        canonicalCommands[canonicalCommands.length - 1] = repairedSyntheticCommand;
         plans.push({
           ...typedPlan,
           confidence: adjusted.confidence,
@@ -1137,9 +1174,10 @@ export const compileProviderIntentsToPlans = (
       rejectedIntentCount += 1;
       continue;
     }
-    canonicalCommands.push(coerced.command);
+    const repairedCommand = repairCanonicalCommandForParser(coerced.command);
+    canonicalCommands.push(repairedCommand);
 
-    const adjusted = adjustConfidenceForPromptAlignment(request, coerced.command, coerced.confidence);
+    const adjusted = adjustConfidenceForPromptAlignment(request, repairedCommand, coerced.confidence);
     if (adjusted.rejectReason) {
       rejectedIntentCount += 1;
       continue;
@@ -1147,7 +1185,7 @@ export const compileProviderIntentsToPlans = (
 
     const commandPlans = parseRuleBasedDiffCandidates({
       ...request,
-      prompt: coerced.command,
+      prompt: repairedCommand,
     });
 
     for (const plan of commandPlans) {

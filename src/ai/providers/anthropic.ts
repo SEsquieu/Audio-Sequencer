@@ -81,7 +81,7 @@ const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
         { user: "remove note 2 at step 1 on lead", command: "remove note 2 at step 1 on lead" },
         { user: "add note c4 to step 3 in bar 3 on lead", command: "add note c4 step 3 on lead in bar 3" },
         { user: "add note g3 step 7 bar 4 on bass", command: "add note g3 step 7 on bass in bar 4" },
-        { user: "4 on the floor kick", command: "kick step 1 on" },
+        { user: "4 on the floor kick", command: "kick on step 1, 5, 9, 13" },
       ],
       invalidExamples: [{ bad: "kick|snare|hat step 1 on", why: "grammar notation, not an executable command" }],
     },
