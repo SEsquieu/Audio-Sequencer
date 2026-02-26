@@ -127,6 +127,9 @@ Priority: `Medium`
 
 ### Phase G: Advanced AI Editing Controls (Later)
 
+- Power-user procedural pattern/programming prompt backend (Strudel-inspired) that compiles constrained generative instructions into safe patch actions
+- Examples: ranges, probabilistic placement, downbeat/every-other-beat rules, octave bounds, seeded randomness
+
 - Deeper insert FX parameter control workflows (broader than current basic support)
 - More arrangement-level edits
 - Optional speech-to-prompt input (push-to-talk mic -> transcript -> existing prompt pipeline)
@@ -153,6 +156,7 @@ Priority: `Medium`
 - Deeper AI trace tooling improvements
 - Broader docs/examples for advanced local model setups
 - Voice prompt UX exploration (browser-native STT first, explicit user-triggered mic permissions)
+- Power-user procedural prompting UX (range/constraint syntax + pseudorandom note placement controls)
 
 ## How To Maintain This File
 
@@ -160,3 +164,5 @@ Priority: `Medium`
 - Add completed work to `Completed Milestones` after commits land
 - Keep `Planned Next Phases` short and directional (not exhaustive)
 - Link bug-specific items to `KNOWN_BUGS.md` when they are defects rather than features
+
+
