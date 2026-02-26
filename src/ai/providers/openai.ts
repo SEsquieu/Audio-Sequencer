@@ -129,6 +129,32 @@ const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
             },
           ],
         },
+        {
+          user: "offbeat hats",
+          intents: [
+            {
+              type: "set_drum_steps",
+              track: "drums",
+              lanes: ["hat"],
+              steps: [2, 6, 10, 14],
+              value: 1,
+              confidence: 0.82,
+            },
+          ],
+        },
+        {
+          user: "16th hats",
+          intents: [
+            {
+              type: "set_drum_steps",
+              track: "drums",
+              lanes: ["hat"],
+              steps: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+              value: 1,
+              confidence: 0.8,
+            },
+          ],
+        },
       ],
       invalidExamples: [{ bad: "kick|snare|hat step 1 on", why: "grammar notation, not an executable command" }],
     },

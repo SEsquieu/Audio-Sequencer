@@ -515,6 +515,80 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     }
 
     match = text.match(
+      /^(?:give me\s+)?(?:an?\s+)?offbeat\s+hat(?:s)?(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (match && track.type === "drums") {
+      const barIndex = clamp(
+        (match[1] ? Math.round(Number(match[1])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "drums") {
+        const targetSteps = [2, 6, 10, 14];
+        const ops: JsonPatchOp[] = [];
+        for (const stepIndex of targetSteps) {
+          if (pattern.steps[stepIndex]?.hat !== 1) {
+            ops.push({
+              op: "replace",
+              path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/hat`,
+              value: 1,
+            });
+          }
+        }
+        if (ops.length > 0) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Set ${track.name} Offbeat Hats`,
+              `Place hats on offbeats in bar ${barIndex + 1}`,
+              ops,
+              0.99
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
+      /^(?:give me\s+)?(?:an?\s+)?(?:16th|sixteenth)\s+(?:note\s+)?hat(?:s)?(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (match && track.type === "drums") {
+      const barIndex = clamp(
+        (match[1] ? Math.round(Number(match[1])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "drums") {
+        const targetSteps = Array.from({ length: 16 }, (_, idx) => idx);
+        const ops: JsonPatchOp[] = [];
+        for (const stepIndex of targetSteps) {
+          if (pattern.steps[stepIndex]?.hat !== 1) {
+            ops.push({
+              op: "replace",
+              path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/hat`,
+              value: 1,
+            });
+          }
+        }
+        if (ops.length > 0) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Set ${track.name} 16th Hats`,
+              `Place hats on all 16 steps in bar ${barIndex + 1}`,
+              ops,
+              0.99
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
       /^(?:give me\s+)?(?:a\s+)?(?:(?:4|four)\s+on\s+the\s+floor|4otf)(?:\s+kick)?(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
     );
     if (match && track.type === "drums") {
