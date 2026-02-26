@@ -20,6 +20,7 @@ The app is designed around a canonical JSON song state and a deterministic-ish W
 
 - Local-first AI patch proposal pipeline using a diff engine that compiles validated patch candidates
 - Deterministic rule parser for fast commands (tempo, swing, gain, send levels, bus routing, track/bar edits)
+- Deterministic drum pattern commands for compact multi-step / multi-lane edits (for example `kick on step 1 and 9`, `kick snare on step 5 and 13`)
 - Deterministic note-edit commands for synth patterns (add/remove/retune notes by step/bar)
 - Note-edit parser accepts broader natural phrasing (e.g. bar/track order variants) to reduce AI near-miss fallthrough
 - Smart patch heuristic fallback for broader local edits
@@ -30,7 +31,9 @@ The app is designed around a canonical JSON song state and a deterministic-ish W
   - OpenAI (user API key)
   - Anthropic (user API key)
 - Structured intent parsing + compilation into typed actions / JSON patch operations
+- Provider canonical-command repair/splitting for near-valid shorthand and multi-line command blobs before parser compile
 - Typed note-level pattern actions (add/remove note, targeted note retune) with local validation
+- Provider multi-intent sequence examples + grouped sequence candidate support for one-audition pattern edits
 - AI candidate audition, accept, and reject flows in the UI
 - Provider health checks and a dev-only trace/debug panel for routing + provider output previews
 

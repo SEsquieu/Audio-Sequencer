@@ -191,6 +191,8 @@ Examples:
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note c4 step 3 on lead in bar 3","confidence":0.77}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note g3 step 7 on bass in bar 4","confidence":0.75}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick on step 1, 5, 9, 13","confidence":0.8}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick step 1 on","confidence":0.78},{"type":"canonical_command","command":"kick step 9 on","confidence":0.78}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note c4 step 1 on lead","confidence":0.74},{"type":"canonical_command","command":"add note e4 step 1 on lead","confidence":0.74},{"type":"canonical_command","command":"add note g4 step 1 on lead","confidence":0.74}]}
 Invalid (do not do this): {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick|snare|hat step 1 on","confidence":0.6}]}
 Valid instead: {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick step 1 on","confidence":0.78}]}
 

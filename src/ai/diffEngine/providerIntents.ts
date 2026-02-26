@@ -248,6 +248,24 @@ const repairCanonicalCommandForParser = (command: string): string => {
   return text;
 };
 
+const expandCanonicalCommandsForParser = (command: string): string[] => {
+  const raw = command
+    .replace(/\r\n/g, "\n")
+    .split(/\n|;/g)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => line.replace(/^(?:[-*]\s+|\d+[.)]\s+)/, "").trim())
+    .filter(Boolean);
+
+  const parts = raw.length > 0 ? raw : [command];
+  const expanded = parts
+    .map((part) => repairCanonicalCommandForParser(part))
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return [...new Set(expanded)];
+};
+
 const containsAny = (text: string, patterns: RegExp[]) => patterns.some((pattern) => pattern.test(text));
 
 const resolveTrackName = (request: DiffEngineRequest, requested?: string): string => {
@@ -1174,31 +1192,42 @@ export const compileProviderIntentsToPlans = (
       rejectedIntentCount += 1;
       continue;
     }
-    const repairedCommand = repairCanonicalCommandForParser(coerced.command);
-    canonicalCommands.push(repairedCommand);
+    const repairedCommands = expandCanonicalCommandsForParser(coerced.command);
+    let emittedAnyCommandPlan = false;
+    for (const repairedCommand of repairedCommands) {
+      canonicalCommands.push(repairedCommand);
 
-    const adjusted = adjustConfidenceForPromptAlignment(request, repairedCommand, coerced.confidence);
-    if (adjusted.rejectReason) {
-      rejectedIntentCount += 1;
-      continue;
-    }
-
-    const commandPlans = parseRuleBasedDiffCandidates({
-      ...request,
-      prompt: repairedCommand,
-    });
-
-    for (const plan of commandPlans) {
-      const adjustedPlan: DiffPlanCandidate = {
-        ...plan,
-        source: "smartPatch",
-        confidence: adjusted.confidence,
-        explanation: coerced.note || plan.explanation,
-      };
-      plans.push(adjustedPlan);
-      if (isSequenceFriendlyPlan(adjustedPlan)) {
-        acceptedSequenceCandidates.push(adjustedPlan);
+      const adjusted = adjustConfidenceForPromptAlignment(request, repairedCommand, coerced.confidence);
+      if (adjusted.rejectReason) {
+        rejectedIntentCount += 1;
+        continue;
       }
+
+      const commandPlans = parseRuleBasedDiffCandidates({
+        ...request,
+        prompt: repairedCommand,
+      });
+
+      if (commandPlans.length === 0) {
+        continue;
+      }
+      emittedAnyCommandPlan = true;
+
+      for (const plan of commandPlans) {
+        const adjustedPlan: DiffPlanCandidate = {
+          ...plan,
+          source: "smartPatch",
+          confidence: adjusted.confidence,
+          explanation: coerced.note || plan.explanation,
+        };
+        plans.push(adjustedPlan);
+        if (isSequenceFriendlyPlan(adjustedPlan)) {
+          acceptedSequenceCandidates.push(adjustedPlan);
+        }
+      }
+    }
+    if (!emittedAnyCommandPlan) {
+      rejectedIntentCount += 1;
     }
   }
 

@@ -27,6 +27,7 @@ Current emphasis:
 - broaden parser/provider command coverage (especially track/bar controls)
 - improve provider prompt grounding and canonical-command alignment
 - tighten note-edit translation reliability (parser phrasing variants + provider examples)
+- improve provider-to-parser translation resilience (repair/splitting of near-valid command output)
 - continue UX polish for Smart Patch/provider settings and diagnostics
 
 ## Execution Discipline (Cross-Workstation Safety)
@@ -80,6 +81,7 @@ To reduce ambiguity during fast iteration (especially across multiple workstatio
 - Provider-key/model scaffolding (OpenAI / Anthropic / Ollama)
 - Provider diagnostics + Smart Patch debug trace panel
 - Typed action expansion for track/bar and FX-related operations
+- Provider sequence-candidate grouping for multi-step pattern edits
 
 ## Active Focus (Near-Term)
 
@@ -140,6 +142,7 @@ Priority: `Medium`
 ## P1 (Near-term, meaningful impact)
 
 - Expand provider prompt examples for track/bar commands across all providers
+- Expand provider multi-intent examples (short drum/note sequences) across all providers
 - Add parser/compiler coverage tests (or lightweight fixtures) for canonical commands
 - Tighten provider status refresh after settings changes
 - Continue pattern/note command coverage expansion before deeper insert-control work

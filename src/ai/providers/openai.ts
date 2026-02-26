@@ -84,6 +84,23 @@ const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
         { user: "add note g3 step 7 bar 4 on bass", command: "add note g3 step 7 on bass in bar 4" },
         { user: "4 on the floor kick", command: "kick on step 1, 5, 9, 13" },
       ],
+      multiIntentExamples: [
+        {
+          user: "put kicks on 1 and 9",
+          intents: [
+            { type: "canonical_command", command: "kick step 1 on", confidence: 0.78 },
+            { type: "canonical_command", command: "kick step 9 on", confidence: 0.78 },
+          ],
+        },
+        {
+          user: "add c major hits on 1 and 9",
+          intents: [
+            { type: "canonical_command", command: "add note c4 step 1 on lead", confidence: 0.74 },
+            { type: "canonical_command", command: "add note e4 step 1 on lead", confidence: 0.74 },
+            { type: "canonical_command", command: "add note g4 step 1 on lead", confidence: 0.74 },
+          ],
+        },
+      ],
       invalidExamples: [{ bad: "kick|snare|hat step 1 on", why: "grammar notation, not an executable command" }],
     },
     null,
