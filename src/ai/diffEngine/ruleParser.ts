@@ -365,6 +365,40 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     }
 
     match = text.match(
+      /^(kick|snare|hat)\s+(on|off|[\d.]+%?)\s+(?:at\s+)?step\s+(\d{1,2}(?:\s*(?:,|and)\s*(?:step\s+)?\d{1,2})*)(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (match && track.type === "drums") {
+      const lane = match[1] as "kick" | "snare" | "hat";
+      const stepValue = parseStepValue(match[2]);
+      const barIndex = clamp(
+        (match[4] ? Math.round(Number(match[4])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      if (stepValue !== null && patternId && patternId !== "0") {
+        const stepTokens = [...match[3].matchAll(/\d{1,2}/g)].map((m) => clamp(Math.round(Number(m[0])) - 1, 0, 15));
+        const uniqueStepIndexes = [...new Set(stepTokens)];
+        if (uniqueStepIndexes.length > 0) {
+          const ops = uniqueStepIndexes.map((stepIndex) => ({
+            op: "replace" as const,
+            path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${lane}`,
+            value: stepValue,
+          }));
+          candidates.push(
+            wrapPatchCandidate(
+              `Set ${track.name} ${lane} Steps`,
+              `Set ${lane} steps ${uniqueStepIndexes.map((idx) => idx + 1).join(", ")} in bar ${barIndex + 1}`,
+              ops,
+              0.985
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
       /^(?:(add|remove|delete|turn on|turn off)\s+)?(kick|snare|hat)\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(on|off|[\d.]+%?))?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
     );
     if (!match) {

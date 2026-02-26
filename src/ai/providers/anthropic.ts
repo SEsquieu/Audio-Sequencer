@@ -53,6 +53,8 @@ const buildSystemPrompt = () =>
     'Return ONLY JSON with schema "audio-sequencer.diff-intent.v1" and an intents array.',
     "Prefer exact track names from context and selected track if no track is named.",
     "Use supportedCanonicalCommands when possible, including note-level pattern edit commands.",
+    "Return executable commands only, not regex/grammar notation or placeholders.",
+    'Do not use "|" or bracketed option lists like "kick|snare|hat".',
   ].join(" ");
 
 const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
@@ -79,7 +81,9 @@ const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
         { user: "remove note 2 at step 1 on lead", command: "remove note 2 at step 1 on lead" },
         { user: "add note c4 to step 3 in bar 3 on lead", command: "add note c4 step 3 on lead in bar 3" },
         { user: "add note g3 step 7 bar 4 on bass", command: "add note g3 step 7 on bass in bar 4" },
+        { user: "4 on the floor kick", command: "kick step 1 on" },
       ],
+      invalidExamples: [{ bad: "kick|snare|hat step 1 on", why: "grammar notation, not an executable command" }],
     },
     null,
     2

@@ -175,6 +175,8 @@ Rules:
 - Use ONLY commands from this supported set (prefer exact phrasing):
 ${formatSupportedCommandList(context)}
 - Prefer exact track names from the provided track list.
+- Return executable commands only. Do NOT return regex patterns, grammar alternatives, placeholders, or meta syntax.
+- Never use symbols like "|" or bracketed option lists (e.g. "kick|snare|hat").
 - If unsupported or ambiguous, return an empty intents array.
 - No markdown. No prose outside JSON.
 
@@ -188,6 +190,8 @@ Examples:
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"set note 2 at step 1 to d4 on lead","confidence":0.72}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note c4 step 3 on lead in bar 3","confidence":0.77}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note g3 step 7 on bass in bar 4","confidence":0.75}]}
+Invalid (do not do this): {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick|snare|hat step 1 on","confidence":0.6}]}
+Valid instead: {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick step 1 on","confidence":0.78}]}
 
 Context:
 ${JSON.stringify(

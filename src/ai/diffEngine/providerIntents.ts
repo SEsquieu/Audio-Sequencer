@@ -330,8 +330,13 @@ const adjustConfidenceForPromptAlignment = (
 ): { confidence: number; rejectReason?: string } => {
   let confidence = Math.max(0.5, Math.min(0.99, baseConfidence ?? 0.78));
   const prompt = normalizeText(request.prompt);
+  const normalizedCommand = normalizeText(command);
   const commandKind = inferCommandKind(command);
   const promptKind = inferPromptIntentKind(request.prompt);
+
+  if (/[|[\]{}]/.test(command) || /<[a-z][^>]*>/.test(command) || /\b(?:or|and\/or)\b/.test(normalizedCommand)) {
+    return { confidence: 0, rejectReason: "Command contains grammar/meta notation instead of an executable command" };
+  }
 
   if (promptKind !== "other" && commandKind !== "other" && promptKind !== commandKind) {
     confidence -= 0.2;
@@ -1072,6 +1077,29 @@ export const compileProviderIntentsToPlans = (
   const plans: DiffPlanCandidate[] = [];
   const canonicalCommands: string[] = [];
   let rejectedIntentCount = 0;
+  const acceptedSequenceCandidates: DiffPlanCandidate[] = [];
+
+  const isSequenceFriendlyAction = (action: DiffPlanCandidate["actions"][number]) =>
+    action.type === "set_drum_step" ||
+    action.type === "rotate_drum_bar_steps" ||
+    action.type === "transpose_track_bar_notes" ||
+    action.type === "set_synth_step_notes_field" ||
+    action.type === "add_synth_step_note" ||
+    action.type === "remove_synth_step_note" ||
+    action.type === "set_synth_step_note_pitch";
+
+  const isSequenceFriendlyPlan = (plan: DiffPlanCandidate) =>
+    plan.actions.length > 0 && plan.actions.every((action) => isSequenceFriendlyAction(action));
+
+  const maybeTrackIdsForPlan = (plan: DiffPlanCandidate): string[] => {
+    const ids = new Set<string>();
+    for (const action of plan.actions) {
+      if ("trackId" in action && typeof action.trackId === "string") {
+        ids.add(action.trackId);
+      }
+    }
+    return [...ids];
+  };
 
   for (const rawIntent of envelope.intents) {
     const typedPlan = toTypedPlanCandidate(rawIntent, request);
@@ -1089,9 +1117,18 @@ export const compileProviderIntentsToPlans = (
           confidence: adjusted.confidence,
           explanation: typedPlan.explanation,
         });
+        if (isSequenceFriendlyPlan(typedPlan)) {
+          acceptedSequenceCandidates.push({
+            ...typedPlan,
+            confidence: adjusted.confidence,
+          });
+        }
         continue;
       }
       plans.push(typedPlan);
+      if (isSequenceFriendlyPlan(typedPlan)) {
+        acceptedSequenceCandidates.push(typedPlan);
+      }
       continue;
     }
 
@@ -1114,13 +1151,47 @@ export const compileProviderIntentsToPlans = (
     });
 
     for (const plan of commandPlans) {
-      plans.push({
+      const adjustedPlan: DiffPlanCandidate = {
         ...plan,
         source: "smartPatch",
         confidence: adjusted.confidence,
         explanation: coerced.note || plan.explanation,
-      });
+      };
+      plans.push(adjustedPlan);
+      if (isSequenceFriendlyPlan(adjustedPlan)) {
+        acceptedSequenceCandidates.push(adjustedPlan);
+      }
     }
+  }
+
+  if (acceptedSequenceCandidates.length >= 2) {
+    const actions = acceptedSequenceCandidates.flatMap((plan) => plan.actions);
+    const allTrackIds = new Set<string>();
+    for (const plan of acceptedSequenceCandidates) {
+      for (const trackId of maybeTrackIdsForPlan(plan)) {
+        allTrackIds.add(trackId);
+      }
+    }
+    const sameTrack = allTrackIds.size === 1 ? request.song.tracks.find((track) => track.id === [...allTrackIds][0]) : null;
+    const averageConfidence =
+      acceptedSequenceCandidates.reduce((sum, plan) => sum + (plan.confidence ?? 0.72), 0) / acceptedSequenceCandidates.length;
+    const firstExplanations = acceptedSequenceCandidates
+      .map((plan) => plan.explanation)
+      .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      .slice(0, 2);
+    plans.push({
+      id: `provider-sequence-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: Math.max(0.5, Math.min(0.95, averageConfidence - 0.03)),
+      label: sameTrack
+        ? `Apply ${acceptedSequenceCandidates.length} Edits to ${sameTrack.name}`
+        : `Apply ${acceptedSequenceCandidates.length} Sequential Edits`,
+      explanation:
+        firstExplanations.length > 0
+          ? `Sequence: ${firstExplanations.join(" • ")}`
+          : `Combine ${acceptedSequenceCandidates.length} provider edits into one auditionable patch`,
+      actions,
+    });
   }
 
   return {
