@@ -552,6 +552,7 @@ function App() {
   const aiProviderProbeSeqRef = useRef(0);
   const aiRequestSeqRef = useRef(0);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
+  const aiCancelReasonRef = useRef<"user" | "superseded" | null>(null);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
   const [trackNoteSpanMemory, setTrackNoteSpanMemory] = useState<Record<string, number>>({});
   const [timelineBarAction, setTimelineBarAction] = useState<TimelineBarActionState | null>(null);
@@ -1712,8 +1713,10 @@ function App() {
   const generateCandidates = async (text: string) => {
     setLastSubmittedPrompt(text);
     const requestSeq = ++aiRequestSeqRef.current;
+    aiCancelReasonRef.current = "superseded";
     aiAbortControllerRef.current?.abort();
     const abortController = new AbortController();
+    aiCancelReasonRef.current = null;
     aiAbortControllerRef.current = abortController;
     setIsAiGenerating(true);
     setAiDiagnostics(null);
@@ -1750,13 +1753,14 @@ function App() {
         return;
       }
       if (abortController.signal.aborted) {
+        const cancelReason = aiCancelReasonRef.current === "user" ? "Request canceled by user" : "Request superseded by a newer prompt";
         setAiDiagnostics((prev) =>
           prev ?? {
             selectedProviderId: "smartPatch-local",
             fallbackProviderIds: [],
             routeReason: "Canceled",
             usedFallback: true,
-            fallbackReason: "Request canceled",
+            fallbackReason: cancelReason,
           }
         );
       } else {
@@ -1880,6 +1884,7 @@ function App() {
   }, [isAiOpen, aiProviderPreference, hasOpenAiApiKey, hasAnthropicApiKey]);
 
   const cancelAiGeneration = () => {
+    aiCancelReasonRef.current = "user";
     aiAbortControllerRef.current?.abort();
     aiAbortControllerRef.current = null;
     setIsAiGenerating(false);
