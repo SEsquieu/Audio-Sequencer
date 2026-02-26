@@ -27,6 +27,7 @@ Current emphasis:
 - lock Phase F scope and success criteria before implementation
 - preserve Phase E gains while shifting focus from capability expansion to reliability/polish
 - prioritize provider UX trust (status, timeouts, fallback clarity) over new command vocabulary
+- continue Phase F provider status lifecycle hardening + diagnostics clarity (selected-provider probes, clearer status semantics)
 
 ## Execution Discipline (Cross-Workstation Safety)
 
@@ -97,11 +98,12 @@ Priority: `High`
 
 Priority: `Medium`
 
-- Reduce stale `Checking…` provider status states
-- Probe on relevant settings saves (model/API key/provider selection)
+- Reduce stale `Checking…` provider status states (save-triggered reprobes now in place; continue edge-case validation)
+- Probe on relevant settings saves (model/API key/provider selection) and keep probes selected-provider-first
 - Improve readiness/error messaging clarity
 - Revisit provider probe strategy to avoid surprise permission/network prompts (lazy + selected-provider-first checks)
 - Clarify timeout vs parse-failure vs fallback messaging in Smart Patch diagnostics/UI
+- Keep provider status semantics consistent (`Not checked` / `Checking…` / `Ready` / `Issue` / `Unavailable`)
 
 ### 3. Documentation / Context Resilience
 
@@ -222,9 +224,9 @@ Priority: `Medium`
 ## P1 (Near-term, meaningful impact)
 
 - Add parser/compiler coverage tests (or lightweight fixtures) for canonical commands and typed actions
-- Tighten provider status refresh after settings changes
-- Implement selected-provider-first probe strategy and save-triggered reprobes
-- Clarify timeout/fallback diagnostics messaging and UI labels
+- Tighten remaining provider status refresh edge cases after settings changes
+- Validate selected-provider-first probe strategy and save-triggered reprobes across providers/devices
+- Clarify timeout/fallback diagnostics messaging and UI labels (in progress; continue polish)
 
 ## P2 (Important, but can follow current phase)
 
