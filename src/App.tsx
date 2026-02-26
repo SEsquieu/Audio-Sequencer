@@ -547,6 +547,7 @@ function App() {
     () => getStoredProviderModel("user-api-anthropic") || "claude-3-5-haiku-latest"
   );
   const [aiProviderHealth, setAiProviderHealth] = useState<Partial<Record<AiProviderId, { ok: boolean; reason?: string }>>>({});
+  const aiProviderProbeSeqRef = useRef(0);
   const aiRequestSeqRef = useRef(0);
   const aiAbortControllerRef = useRef<AbortController | null>(null);
   const [trackOctaves, setTrackOctaves] = useState<Record<string, number>>({});
@@ -1771,48 +1772,79 @@ function App() {
 
   useEffect(() => {
     setAiProviderDescriptors(listAiProviderDescriptors());
-  }, [openAiApiKeyDraft, anthropicApiKeyDraft]);
+  }, [hasOpenAiApiKey, hasAnthropicApiKey]);
+
+  const refreshAiProviderHealth = async (requestedProviderIds?: AiProviderId[]) => {
+    if (!isAiOpen) {
+      return;
+    }
+    const providers = listAiProviderDescriptors();
+    const supportedProviders = providers.filter(
+      (provider) =>
+        provider.id === "ollama-local" || provider.id === "user-api-openai" || provider.id === "user-api-anthropic"
+    );
+
+    const filteredTargets = (requestedProviderIds?.length
+      ? supportedProviders.filter((provider) => requestedProviderIds.includes(provider.id))
+      : supportedProviders
+    ).filter((provider) => provider.availability !== "unavailable");
+
+    if (filteredTargets.length === 0) {
+      return;
+    }
+
+    const targetIds = filteredTargets.map((provider) => provider.id);
+    const selectedIndex = targetIds.findIndex((id) => id === aiProviderPreference);
+    const orderedTargetIds =
+      selectedIndex > 0
+        ? [targetIds[selectedIndex], ...targetIds.slice(0, selectedIndex), ...targetIds.slice(selectedIndex + 1)]
+        : targetIds;
+
+    const probeSeq = ++aiProviderProbeSeqRef.current;
+    setAiProviderHealth((prev) => {
+      const next = { ...prev };
+      for (const providerId of orderedTargetIds) {
+        delete next[providerId];
+      }
+      return next;
+    });
+
+    const applyResult = (providerId: AiProviderId, health: { ok: boolean; reason?: string }) => {
+      if (probeSeq !== aiProviderProbeSeqRef.current) {
+        return;
+      }
+      setAiProviderHealth((prev) => ({
+        ...prev,
+        [providerId]: { ok: health.ok, reason: health.reason },
+      }));
+    };
+
+    const [firstProviderId, ...restProviderIds] = orderedTargetIds;
+    if (firstProviderId) {
+      const firstHealth = await probeAiProviderHealth(firstProviderId);
+      if (firstHealth) {
+        applyResult(firstProviderId, firstHealth);
+      }
+    }
+    await Promise.all(
+      restProviderIds.map(async (providerId) => {
+        const health = await probeAiProviderHealth(providerId);
+        if (health) {
+          applyResult(providerId, health);
+        }
+      })
+    );
+  };
 
   useEffect(() => {
     if (!isAiOpen) {
       return;
     }
-    let cancelled = false;
-    const run = async () => {
-      const providers = listAiProviderDescriptors();
-      const probeTargets = providers
-        .filter(
-          (provider) =>
-            provider.id === "ollama-local" ||
-            provider.id === "user-api-openai" ||
-            provider.id === "user-api-anthropic"
-        )
-        .filter((provider) => provider.availability !== "unavailable")
-        .map((provider) => provider.id);
-      const results = await Promise.all(
-        probeTargets.map(async (providerId) => ({
-          providerId,
-          health: await probeAiProviderHealth(providerId),
-        }))
-      );
-      if (cancelled) {
-        return;
-      }
-      setAiProviderHealth((prev) => {
-        const next = { ...prev };
-        for (const result of results) {
-          if (result.health) {
-            next[result.providerId] = { ok: result.health.ok, reason: result.health.reason };
-          }
-        }
-        return next;
-      });
-    };
-    void run();
+    void refreshAiProviderHealth();
     return () => {
-      cancelled = true;
+      aiProviderProbeSeqRef.current += 1;
     };
-  }, [openAiApiKeyDraft, anthropicApiKeyDraft, isAiOpen]);
+  }, [isAiOpen, aiProviderPreference, hasOpenAiApiKey, hasAnthropicApiKey]);
 
   const cancelAiGeneration = () => {
     aiAbortControllerRef.current?.abort();
@@ -1834,21 +1866,31 @@ function App() {
     setStoredProviderApiKey("user-api-openai", openAiApiKeyDraft);
     setHasOpenAiApiKey(hasStoredProviderApiKey("user-api-openai"));
     setAiProviderDescriptors(listAiProviderDescriptors());
+    void refreshAiProviderHealth(["user-api-openai"]);
   };
 
   const onAnthropicApiKeySave = () => {
     setStoredProviderApiKey("user-api-anthropic", anthropicApiKeyDraft);
     setHasAnthropicApiKey(hasStoredProviderApiKey("user-api-anthropic"));
     setAiProviderDescriptors(listAiProviderDescriptors());
+    void refreshAiProviderHealth(["user-api-anthropic"]);
   };
 
   const onProviderModelSave = (providerId: AiProviderId, value: string) => {
     setStoredProviderModel(providerId, value);
-    setAiProviderHealth((prev) => {
-      const next = { ...prev };
-      delete next[providerId];
-      return next;
-    });
+    void refreshAiProviderHealth([providerId]);
+  };
+
+  const classifyAiFallbackReason = (reason?: string) => {
+    if (!reason) return { label: "Fallback", detail: "Used local fallback path" };
+    const text = reason.toLowerCase();
+    if (text.includes("timed out")) return { label: "Timed out", detail: reason };
+    if (text.includes("canceled")) return { label: "Canceled", detail: reason };
+    if (text.includes("unavailable")) return { label: "Provider unavailable", detail: reason };
+    if (text.includes("no compilable") || text.includes("invalid") || text.includes("parse")) {
+      return { label: "Provider output unsupported", detail: reason };
+    }
+    return { label: "Fallback", detail: reason };
   };
 
   const onSubmitPrompt = (event: FormEvent) => {
@@ -1897,6 +1939,8 @@ function App() {
     setOctaveBase(DEFAULT_OCTAVE_BASE);
     setOctaveTransition(null);
   };
+
+  const aiFallbackState = aiDiagnostics?.usedFallback ? classifyAiFallbackReason(aiDiagnostics.fallbackReason) : null;
 
   const addTrackFx = (trackIndex: number, type: FxType) => {
     createAndCommit(`Add ${FX_TYPE_LABEL[type]} FX`, [
@@ -4344,7 +4388,11 @@ function App() {
             <div className="ai-debug-state">
               <strong>{aiDiagnostics.selectedProviderId}</strong>
               <span>{aiDiagnostics.routeReason}</span>
-              {aiDiagnostics.usedFallback && <span>Fallback: {aiDiagnostics.fallbackReason ?? "Yes"}</span>}
+              {aiDiagnostics.usedFallback && (
+                <span title={aiFallbackState?.detail}>
+                  Fallback: {aiFallbackState?.label ?? "Used local fallback"}
+                </span>
+              )}
             </div>
           )}
           {import.meta.env.DEV && aiDiagnostics && (
@@ -4365,6 +4413,14 @@ function App() {
                   <div>
                     <div className="ai-trace-label">Rejected Intents</div>
                     <div className="ai-trace-value">{aiDiagnostics.rejectedProviderIntentCount}</div>
+                  </div>
+                )}
+                {aiDiagnostics.usedFallback && (
+                  <div>
+                    <div className="ai-trace-label">Fallback Outcome</div>
+                    <div className="ai-trace-value" title={aiFallbackState?.detail}>
+                      {aiFallbackState?.label ?? "Fallback"}
+                    </div>
                   </div>
                 )}
                 {aiDiagnostics.providerRawResponsePreview && (

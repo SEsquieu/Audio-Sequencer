@@ -23,9 +23,10 @@ Track UI/behavior issues here as they are discovered so they do not get lost dur
 ### KB-001 Smart Patch provider status can remain "Checking…" until drawer reopen
 
 - `Priority:` `P3`
-- `Status:` `Open`
+- `Status:` `Fixed`
 - `Area:` AI / Smart Patch UI / Provider Settings
 - `Discovered:` 2026-02-26
+- `Fixed:` 2026-02-26
 
 #### Summary
 
@@ -51,12 +52,13 @@ When using Ollama with a custom `Model Override` (for example a locally hosted n
 - Provider health probe does not always rerun immediately after provider settings/model override save.
 - Drawer open/close cycle retriggers the probe.
 
-#### Candidate Fix
+#### Implemented Fix
 
-- Trigger provider-specific health probe after `Model Override` save (and possibly after API key save).
-- Optimistically set status to `Checking…` only for the affected provider, then replace on completion.
+- Trigger provider-specific health probe after `Model Override` save and API key save.
+- Use selected-provider-first probe ordering with stale-response protection in the Smart Patch drawer.
+- Clear only the targeted provider status to `Checking…` during reprobe and replace on completion.
 
-#### Notes
+#### Verification Notes
 
-- Low priority / subtle UX issue
-- Keep as a breadcrumb for later polish pass during AI provider UX refinement
+- Manually validated: provider status updates correctly after save without requiring drawer close/reopen.
+- No regression observed in local generation flow while testing the fix.
