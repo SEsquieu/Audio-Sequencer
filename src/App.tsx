@@ -587,8 +587,8 @@ function App() {
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiProviderPreference, setAiProviderPreferenceState] = useState<string | "auto">(() => getStoredAiProviderPreference());
   const [aiDiagnostics, setAiDiagnostics] = useState<DiffEngineDiagnostics | null>(null);
-  const [aiSelectedTrackOnly, setAiSelectedTrackOnly] = useState(true);
-  const [aiLiveSafeWhilePlaying, setAiLiveSafeWhilePlaying] = useState(true);
+  const [aiSelectedTrackOnly, setAiSelectedTrackOnly] = useState(false);
+  const [aiLiveSafeWhilePlaying, setAiLiveSafeWhilePlaying] = useState(false);
   const [aiLocks, setAiLocks] = useState<AiLockState>(DEFAULT_AI_LOCKS);
   const [aiProviderDescriptors, setAiProviderDescriptors] = useState<AiProviderDescriptor[]>(() => listAiProviderDescriptors());
   const [openAiApiKeyDraft, setOpenAiApiKeyDraft] = useState(() => getStoredProviderApiKey("user-api-openai"));
