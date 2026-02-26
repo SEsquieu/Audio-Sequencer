@@ -129,6 +129,7 @@ Priority: `Medium`
 
 - Deeper insert FX parameter control workflows (broader than current basic support)
 - More arrangement-level edits
+- Optional speech-to-prompt input (push-to-talk mic -> transcript -> existing prompt pipeline)
 - Possibly provider streaming or richer hosted-provider integration (if/when needed)
 
 ## Prioritized Planned Features / Work Items
@@ -151,6 +152,7 @@ Priority: `Medium`
 - Extended power-user provider settings UX polish
 - Deeper AI trace tooling improvements
 - Broader docs/examples for advanced local model setups
+- Voice prompt UX exploration (browser-native STT first, explicit user-triggered mic permissions)
 
 ## How To Maintain This File
 
