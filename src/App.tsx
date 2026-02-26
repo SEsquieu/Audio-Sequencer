@@ -244,6 +244,35 @@ const isAiPatchInTrackScopeSet = (patch: PatchMeta, allowedTrackIndices: Set<num
   return touchedTracks.every((index) => allowedTrackIndices.has(index));
 };
 
+const formatAiPromptTrackScopeLabel = (song: SongState, scope: Set<number> | null): string | null => {
+  if (!scope || scope.size === 0) {
+    return null;
+  }
+  const names = Array.from(scope)
+    .map((index) => song.tracks[index]?.name)
+    .filter((name): name is string => typeof name === "string" && name.trim().length > 0);
+  if (names.length === 0) {
+    return null;
+  }
+  if (names.length <= 2) {
+    return names.join(", ");
+  }
+  return `${names.slice(0, 2).join(", ")} +${names.length - 2}`;
+};
+
+const getAiPromptPrefixOverrideLabel = (song: SongState, promptText: string): string | null => {
+  const match = promptText.match(/^\s*([^:\n]{1,48}):\s+/);
+  if (!match) {
+    return null;
+  }
+  const prefix = match[1].trim().toLowerCase();
+  if (!prefix) {
+    return null;
+  }
+  const scoped = getExplicitAiPromptTrackScope(song, `${prefix}: x`);
+  return formatAiPromptTrackScopeLabel(song, scoped);
+};
+
 const formatPatchPath = (path: string): string =>
   path
     .replace(/^\/tracks\/(\d+)\//, "track[$1].")
@@ -767,15 +796,23 @@ function App() {
 
   const safeTrackIndex = Math.min(selectedTrack, Math.max(0, song.tracks.length - 1));
   const track = song.tracks[safeTrackIndex] ?? song.tracks[0];
+  const aiExplicitPromptTrackScope = useMemo(
+    () => getExplicitAiPromptTrackScope(committedSong, lastSubmittedPrompt),
+    [committedSong, lastSubmittedPrompt]
+  );
+  const aiExplicitPromptTrackScopeLabel = useMemo(
+    () => formatAiPromptTrackScopeLabel(committedSong, aiExplicitPromptTrackScope),
+    [aiExplicitPromptTrackScope, committedSong]
+  );
+  const aiPromptPrefixOverrideLabel = useMemo(() => getAiPromptPrefixOverrideLabel(committedSong, prompt), [committedSong, prompt]);
   const filteredCandidates = useMemo(() => {
     const selectedTrackIndex =
       track?.id != null ? committedSong.tracks.findIndex((t) => t.id === track.id) : -1;
     const selectedIndexOrNull = selectedTrackIndex >= 0 ? selectedTrackIndex : null;
-    const explicitPromptTrackScope = getExplicitAiPromptTrackScope(committedSong, lastSubmittedPrompt);
     return candidates.filter((candidate) => {
       if (aiSelectedTrackOnly) {
-        if (explicitPromptTrackScope) {
-          if (!isAiPatchInTrackScopeSet(candidate, explicitPromptTrackScope)) {
+        if (aiExplicitPromptTrackScope) {
+          if (!isAiPatchInTrackScopeSet(candidate, aiExplicitPromptTrackScope)) {
             return false;
           }
         } else if (!isAiPatchInSelectedTrackScope(candidate, selectedIndexOrNull)) {
@@ -787,7 +824,7 @@ function App() {
       }
       return true;
     });
-  }, [aiLiveSafeWhilePlaying, aiSelectedTrackOnly, candidates, committedSong, isPlaying, lastSubmittedPrompt, track?.id]);
+  }, [aiExplicitPromptTrackScope, aiLiveSafeWhilePlaying, aiSelectedTrackOnly, candidates, committedSong.tracks, isPlaying, track?.id]);
   const patternId = track?.lane[selectedBar] ?? track?.lane[0];
   const pattern = patternId ? track?.patterns[patternId] : undefined;
   const playheadPatternId = track?.lane[playhead.bar] ?? track?.lane[0];
@@ -4510,6 +4547,11 @@ function App() {
               <strong>{aiDiagnostics.selectedProviderId}</strong>
               <span className="ai-debug-pill">{aiProviderRouteStatusLabel}</span>
               <span>{aiDiagnostics.routeReason}</span>
+              {aiExplicitPromptTrackScopeLabel && (
+                <span title="Prompt explicitly targets track scope">
+                  Scope: {aiExplicitPromptTrackScopeLabel}
+                </span>
+              )}
               {aiDiagnostics.usedFallback && (
                 <span title={aiFallbackState?.detail}>
                   Fallback: {aiFallbackState?.label ?? "Used local fallback"}
@@ -4550,6 +4592,12 @@ function App() {
                     {aiTraceLastResultLabel}
                   </div>
                 </div>
+                {aiExplicitPromptTrackScopeLabel && (
+                  <div>
+                    <div className="ai-trace-label">Prompt Scope Override</div>
+                    <div className="ai-trace-value">{aiExplicitPromptTrackScopeLabel}</div>
+                  </div>
+                )}
                 {aiDiagnostics.usedFallback && (
                   <div>
                     <div className="ai-trace-label">Fallback Outcome</div>
@@ -4620,14 +4668,16 @@ function App() {
           <label className="ai-form-label" htmlFor="ai-prompt-input">
             Prompt
           </label>
-          <textarea
-            id="ai-prompt-input"
-            className="ai-prompt-input"
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Describe the patch change you want..."
-            rows={2}
-          />
+          <div className={aiPromptPrefixOverrideLabel ? "ai-prompt-input-wrap has-prefix-override" : "ai-prompt-input-wrap"}>
+            <textarea
+              id="ai-prompt-input"
+              className="ai-prompt-input"
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Describe the patch change you want..."
+              rows={2}
+            />
+          </div>
           <div className="ai-form-actions">
             <button type="submit" disabled={isAiGenerating}>
               {isAiGenerating ? "Generating..." : "Generate"}
