@@ -2036,10 +2036,14 @@ function App() {
 
   const onSubmitPrompt = (event: FormEvent) => {
     event.preventDefault();
-    if (!prompt.trim()) {
+    const nextPrompt = prompt.trim();
+    if (!nextPrompt) {
       return;
     }
-    void generateCandidates(prompt.trim());
+    if (isAiGenerating && nextPrompt === lastSubmittedPrompt.trim()) {
+      return;
+    }
+    void generateCandidates(nextPrompt);
   };
 
   const auditionToggle = (candidate: PatchMeta) => {
