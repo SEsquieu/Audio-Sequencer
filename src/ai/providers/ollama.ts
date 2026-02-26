@@ -198,6 +198,7 @@ Examples:
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"set_drum_steps","track":"drums","lanes":["kick"],"steps":[0,4,8,12],"value":1,"confidence":0.84}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"set_drum_steps","track":"drums","lanes":["hat"],"steps":[2,6,10,14],"value":1,"confidence":0.82}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"set_drum_steps","track":"drums","lanes":["hat"],"steps":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],"value":1,"confidence":0.8}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"set_drum_steps","track":"drums","lanes":["kick"],"steps":[0,4,8,12],"value":1,"confidence":0.84},{"type":"set_drum_steps","track":"drums","lanes":["snare"],"steps":[4,12],"value":1,"confidence":0.82},{"type":"set_drum_steps","track":"drums","lanes":["hat"],"steps":[0,2,4,6,8,10,12,14],"value":1,"confidence":0.8}]}
 Invalid (do not do this): {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick|snare|hat step 1 on","confidence":0.6}]}
 Valid instead: {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick step 1 on","confidence":0.78}]}
 
