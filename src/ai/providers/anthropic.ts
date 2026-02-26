@@ -52,6 +52,7 @@ const buildSystemPrompt = () =>
     "Convert the user request into canonical audio sequencer commands.",
     'Return ONLY JSON with schema "audio-sequencer.diff-intent.v1" and an intents array.',
     "Prefer exact track names from context and selected track if no track is named.",
+    "Use supportedCanonicalCommands when possible, including note-level pattern edit commands.",
   ].join(" ");
 
 const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
@@ -69,6 +70,14 @@ const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
         schema: "audio-sequencer.diff-intent.v1",
         intents: [{ type: "canonical_command", command: "lower bass gain", confidence: 0.8 }],
       },
+      examples: [
+        { user: "add note c4 step 1 on lead", command: "add note c4 step 1 on lead" },
+        { user: "remove note g3 step 9 on bass in bar 2", command: "remove note g3 step 9 on bass in bar 2" },
+        { user: "set note c4 to d4 step 1 on lead", command: "set note c4 to d4 step 1 on lead" },
+        { user: "set note 2 at step 1 to d4 on lead", command: "set note 2 at step 1 to d4 on lead" },
+        { user: "set second note c4 to d4 step 1 on lead", command: "set second note c4 to d4 step 1 on lead" },
+        { user: "remove note 2 at step 1 on lead", command: "remove note 2 at step 1 on lead" },
+      ],
     },
     null,
     2
@@ -178,4 +187,3 @@ export const createAnthropicIntentProvider = (): AiIntentProvider => {
     },
   };
 };
-

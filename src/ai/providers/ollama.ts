@@ -148,6 +148,9 @@ const DEFAULT_SUPPORTED_COMMANDS = [
   "add note <pitch> step <n> on <track> [in bar <n>]",
   "remove note <pitch> step <n> on <track> [in bar <n>]",
   "set note <fromPitch> to <toPitch> step <n> on <track> [in bar <n>]",
+  "remove note <index> at step <n> on <track> [in bar <n>]",
+  "set note <index> at step <n> to <toPitch> on <track> [in bar <n>]",
+  "set <ordinal> note <fromPitch> to <toPitch> step <n> on <track> [in bar <n>]",
 ];
 
 const formatSupportedCommandList = (context?: AiPromptContext) => {
@@ -181,6 +184,8 @@ Examples:
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"lower bass gain","confidence":0.82}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"copy lead bar 1 to bar 5","confidence":0.79}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"transpose lead up 2 in bar 3","confidence":0.76}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"set second note c4 to d4 step 1 on lead","confidence":0.74}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"set note 2 at step 1 to d4 on lead","confidence":0.72}]}
 
 Context:
 ${JSON.stringify(

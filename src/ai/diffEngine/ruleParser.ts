@@ -218,6 +218,26 @@ const parsePitchToken = (raw: string): number | null => {
   return clamp((octave + 1) * 12 + semitone, 0, 127);
 };
 
+const parseOccurrenceToken = (raw?: string | null): number | null => {
+  if (!raw) {
+    return null;
+  }
+  const token = raw.trim().toLowerCase();
+  if (token === "first") return 0;
+  if (token === "second") return 1;
+  if (token === "third") return 2;
+  if (token === "fourth") return 3;
+  const numMatch = token.match(/^(\d+)(?:st|nd|rd|th)?$/);
+  if (!numMatch) {
+    return null;
+  }
+  const n = Math.round(Number(numMatch[1]));
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  return n - 1;
+};
+
 export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPlanCandidate[] => {
   const text = norm(request.prompt);
   const song = request.song;
@@ -532,14 +552,21 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     }
 
     match = text.match(
-      /^(?:set|move)\s+note\s+([a-g][#b]?-?\d|\d{1,3})\s+to\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      /^(?:set|move)\s+(?:(first|second|third|fourth|\d+(?:st|nd|rd|th))\s+)?note\s+([a-g][#b]?-?\d|\d{1,3})\s+to\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
     );
+    let retuneByIndexMatch: RegExpMatchArray | null = null;
+    if (!match) {
+      retuneByIndexMatch = text.match(
+        /^(?:set|move)\s+note\s+(\d{1,2})\s+(?:at\s+)?step\s+(\d{1,2})\s+to\s+([a-g][#b]?-?\d|\d{1,3})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      );
+    }
     if (match && track.type === "synth") {
-      const fromPitch = parsePitchToken(match[1]);
-      const toPitch = parsePitchToken(match[2]);
-      const stepIndex = clamp(Math.round(Number(match[3])) - 1, 0, 15);
+      const occurrence = parseOccurrenceToken(match[1]);
+      const fromPitch = parsePitchToken(match[2]);
+      const toPitch = parsePitchToken(match[3]);
+      const stepIndex = clamp(Math.round(Number(match[4])) - 1, 0, 15);
       const barIndex = clamp(
-        (match[4] ? Math.round(Number(match[4])) - 1 : request.scope.selectedBar ?? 0),
+        (match[5] ? Math.round(Number(match[5])) - 1 : request.scope.selectedBar ?? 0),
         0,
         Math.max(0, track.lane.length - 1)
       );
@@ -547,7 +574,11 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
       const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
       if (pattern && pattern.type === "synth" && fromPitch !== null && toPitch !== null) {
         const cell = pattern.steps[stepIndex] ?? [];
-        const noteIndex = cell.findIndex((note) => Math.round(note.pitch) === fromPitch);
+        const matches = cell
+          .map((note, idx) => ({ idx, pitch: Math.round(note.pitch) }))
+          .filter((item) => item.pitch === fromPitch)
+          .map((item) => item.idx);
+        const noteIndex = matches.length === 0 ? -1 : matches[Math.min(Math.max(occurrence ?? 0, 0), matches.length - 1)];
         if (noteIndex >= 0 && !cell.some((note, idx) => idx !== noteIndex && Math.round(note.pitch) === toPitch)) {
           candidates.push(
             wrapPatchCandidate(
@@ -567,16 +598,55 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
         }
       }
     }
+    if (retuneByIndexMatch && track.type === "synth") {
+      const noteIndex = clamp(Math.round(Number(retuneByIndexMatch[1])) - 1, 0, 31);
+      const stepIndex = clamp(Math.round(Number(retuneByIndexMatch[2])) - 1, 0, 15);
+      const toPitch = parsePitchToken(retuneByIndexMatch[3]);
+      const barIndex = clamp(
+        (retuneByIndexMatch[4] ? Math.round(Number(retuneByIndexMatch[4])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "synth" && toPitch !== null) {
+        const cell = pattern.steps[stepIndex] ?? [];
+        if (noteIndex < cell.length && Math.round(cell[noteIndex].pitch) !== toPitch) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Retune ${track.name} Note`,
+              `Set note ${noteIndex + 1} on ${track.name} step ${stepIndex + 1} in bar ${barIndex + 1} to ${toPitch}`,
+              [
+                {
+                  op: "replace",
+                  path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${noteIndex}/pitch`,
+                  value: toPitch,
+                },
+              ],
+              0.97
+            )
+          );
+          return candidates;
+        }
+      }
+    }
 
     match = text.match(
-      /^(add|remove|delete)\s+note\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+len(?:gth)?\s+(\d{1,2}))?(?:\s+vel(?:ocity)?\s+([\d.]+%?))?$/
+      /^(add|remove|delete)\s+(?:(first|second|third|fourth|\d+(?:st|nd|rd|th))\s+)?note\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+len(?:gth)?\s+(\d{1,2}))?(?:\s+vel(?:ocity)?\s+([\d.]+%?))?$/
     );
+    let removeByIndexMatch: RegExpMatchArray | null = null;
+    if (!match) {
+      removeByIndexMatch = text.match(
+        /^(remove|delete)\s+note\s+(\d{1,2})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      );
+    }
     if (match && track.type === "synth") {
       const mode = match[1];
-      const pitch = parsePitchToken(match[2]);
-      const stepIndex = clamp(Math.round(Number(match[3])) - 1, 0, 15);
+      const occurrence = parseOccurrenceToken(match[2]);
+      const pitch = parsePitchToken(match[3]);
+      const stepIndex = clamp(Math.round(Number(match[4])) - 1, 0, 15);
       const barIndex = clamp(
-        (match[4] ? Math.round(Number(match[4])) - 1 : request.scope.selectedBar ?? 0),
+        (match[5] ? Math.round(Number(match[5])) - 1 : request.scope.selectedBar ?? 0),
         0,
         Math.max(0, track.lane.length - 1)
       );
@@ -585,8 +655,8 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
       if (pattern && pattern.type === "synth" && pitch !== null) {
         const cell = pattern.steps[stepIndex] ?? [];
         if (mode === "add") {
-          const length = match[5] ? clamp(Math.round(Number(match[5])), 1, 16) : 1;
-          const velocity = match[6] ? clamp(parsePercentOrUnit(match[6]), 0, 1) : 1;
+          const length = match[6] ? clamp(Math.round(Number(match[6])), 1, 16) : 1;
+          const velocity = match[7] ? clamp(parsePercentOrUnit(match[7]), 0, 1) : 1;
           if (Number.isFinite(velocity)) {
             const duplicate = cell.some((note) => note.pitch === pitch && note.length === length && note.velocity === velocity);
             if (!duplicate) {
@@ -602,7 +672,11 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
             }
           }
         } else {
-          const noteIndex = cell.findIndex((note) => Math.round(note.pitch) === pitch);
+          const matches = cell
+            .map((note, idx) => ({ idx, pitch: Math.round(note.pitch) }))
+            .filter((item) => item.pitch === pitch)
+            .map((item) => item.idx);
+          const noteIndex = matches.length === 0 ? -1 : matches[Math.min(Math.max(occurrence ?? 0, 0), matches.length - 1)];
           if (noteIndex >= 0) {
             candidates.push(
               wrapPatchCandidate(
@@ -614,6 +688,32 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
             );
             return candidates;
           }
+        }
+      }
+    }
+    if (removeByIndexMatch && track.type === "synth") {
+      const noteIndex = clamp(Math.round(Number(removeByIndexMatch[2])) - 1, 0, 31);
+      const stepIndex = clamp(Math.round(Number(removeByIndexMatch[3])) - 1, 0, 15);
+      const barIndex = clamp(
+        (removeByIndexMatch[4] ? Math.round(Number(removeByIndexMatch[4])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "synth") {
+        const cell = pattern.steps[stepIndex] ?? [];
+        if (noteIndex < cell.length) {
+          const pitch = Math.round(cell[noteIndex].pitch);
+          candidates.push(
+            wrapPatchCandidate(
+              `Remove ${track.name} Note`,
+              `Remove note ${noteIndex + 1} (${pitch}) from ${track.name} step ${stepIndex + 1} in bar ${barIndex + 1}`,
+              [{ op: "remove", path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${noteIndex}` }],
+              0.97
+            )
+          );
+          return candidates;
         }
       }
     }

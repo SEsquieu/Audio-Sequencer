@@ -30,6 +30,9 @@ const SUPPORTED_CANONICAL_COMMANDS = [
   "add note <pitch> step <n> on <track> [in bar <n>] [len <steps>] [vel <percent>%]",
   "remove note <pitch> step <n> on <track> [in bar <n>]",
   "set note <fromPitch> to <toPitch> step <n> on <track> [in bar <n>]",
+  "remove note <index> at step <n> on <track> [in bar <n>]",
+  "set note <index> at step <n> to <toPitch> on <track> [in bar <n>]",
+  "set <ordinal> note <fromPitch> to <toPitch> step <n> on <track> [in bar <n>]",
 ];
 
 const summarizeFxParams = (fx: SongState["tracks"][number]["insertFx"][number]["params"]) => {
