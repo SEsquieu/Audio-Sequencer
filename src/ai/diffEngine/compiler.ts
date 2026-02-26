@@ -164,6 +164,60 @@ export const compileDiffPlanCandidate = (plan: DiffPlanCandidate, song: SongStat
       });
       continue;
     }
+    if (action.type === "set_drum_step_batch") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for set_drum_step_batch (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "drums") {
+        warnings.push(`Track is not drums for set_drum_step_batch (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for set_drum_step_batch (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for set_drum_step_batch`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "drums") {
+        warnings.push(`Drum pattern not found (${patternId})`);
+        continue;
+      }
+      if (!Array.isArray(action.entries) || action.entries.length === 0) {
+        warnings.push("No entries for set_drum_step_batch");
+        continue;
+      }
+      let changed = 0;
+      const seenPaths = new Set<string>();
+      for (const entry of action.entries) {
+        const stepIndex = Math.max(0, Math.min(pattern.steps.length - 1, Math.round(entry.stepIndex)));
+        const lane = entry.lane;
+        if (!["kick", "snare", "hat"].includes(lane)) {
+          continue;
+        }
+        const path = `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${lane}`;
+        if (seenPaths.has(path)) {
+          continue;
+        }
+        seenPaths.add(path);
+        const value = Math.max(0, Math.min(1, Number.isFinite(entry.value) ? entry.value : 0));
+        if ((pattern.steps[stepIndex] as any)[lane] === value) {
+          continue;
+        }
+        compiledOps.push({ op: "replace", path, value });
+        changed += 1;
+      }
+      if (changed === 0) {
+        warnings.push("No drum steps changed for set_drum_step_batch");
+      }
+      continue;
+    }
     if (action.type === "rotate_drum_bar_steps") {
       const trackIndex = findTrackIndex(action.trackId);
       if (trackIndex < 0) {

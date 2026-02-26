@@ -81,6 +81,18 @@ export type DiffPlanAction =
       explanation?: string;
     }
   | {
+      type: "set_drum_step_batch";
+      trackId: string;
+      barIndex: number;
+      entries: Array<{
+        stepIndex: number;
+        lane: keyof DrumStep;
+        value: number;
+      }>;
+      label?: string;
+      explanation?: string;
+    }
+  | {
       type: "rotate_drum_bar_steps";
       trackId: string;
       barIndex: number;

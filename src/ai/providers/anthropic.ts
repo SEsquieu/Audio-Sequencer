@@ -53,6 +53,7 @@ const buildSystemPrompt = () =>
     'Return ONLY JSON with schema "audio-sequencer.diff-intent.v1" and an intents array.',
     "Prefer exact track names from context and selected track if no track is named.",
     "Use supportedCanonicalCommands when possible, including note-level pattern edit commands.",
+    "For compact drum patterns (multiple lanes/steps), prefer typed intents like set_drum_steps over one long canonical string.",
     "Return executable commands only, not regex/grammar notation or placeholders.",
     'Do not use "|" or bracketed option lists like "kick|snare|hat".',
   ].join(" ");
@@ -97,6 +98,34 @@ const buildUserPrompt = (prompt: string, context?: AiPromptContext) =>
             { type: "canonical_command", command: "add note c4 step 1 on lead", confidence: 0.74 },
             { type: "canonical_command", command: "add note e4 step 1 on lead", confidence: 0.74 },
             { type: "canonical_command", command: "add note g4 step 1 on lead", confidence: 0.74 },
+          ],
+        },
+      ],
+      typedIntentExamples: [
+        {
+          user: "kick and snare on 5 and 13",
+          intents: [
+            {
+              type: "set_drum_steps",
+              track: "drums",
+              lanes: ["kick", "snare"],
+              steps: [4, 12],
+              value: 1,
+              confidence: 0.8,
+            },
+          ],
+        },
+        {
+          user: "4 on the floor kick",
+          intents: [
+            {
+              type: "set_drum_steps",
+              track: "drums",
+              lanes: ["kick"],
+              steps: [0, 4, 8, 12],
+              value: 1,
+              confidence: 0.84,
+            },
           ],
         },
       ],

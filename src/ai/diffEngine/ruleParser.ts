@@ -441,7 +441,81 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
     }
 
     match = text.match(
-      /^(?:give me\s+)?(?:a\s+)?(?:4|four)\s+on\s+the\s+floor\s+kick(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      /^(?:give me\s+)?(?:a\s+)?backbeat\s+snare(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (match && track.type === "drums") {
+      const barIndex = clamp(
+        (match[1] ? Math.round(Number(match[1])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "drums") {
+        const targetSteps = [4, 12];
+        const ops: JsonPatchOp[] = [];
+        for (const stepIndex of targetSteps) {
+          if (pattern.steps[stepIndex]?.snare !== 1) {
+            ops.push({
+              op: "replace",
+              path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/snare`,
+              value: 1,
+            });
+          }
+        }
+        if (ops.length > 0) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Set ${track.name} Backbeat Snare`,
+              `Place snare on steps 5 and 13 in bar ${barIndex + 1}`,
+              ops,
+              0.99
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
+      /^(?:give me\s+)?(?:an?\s+)?(?:8th|eighth)\s+(?:note\s+)?hat(?:s)?(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (match && track.type === "drums") {
+      const barIndex = clamp(
+        (match[1] ? Math.round(Number(match[1])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "drums") {
+        const targetSteps = [0, 2, 4, 6, 8, 10, 12, 14];
+        const ops: JsonPatchOp[] = [];
+        for (const stepIndex of targetSteps) {
+          if (pattern.steps[stepIndex]?.hat !== 1) {
+            ops.push({
+              op: "replace",
+              path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/hat`,
+              value: 1,
+            });
+          }
+        }
+        if (ops.length > 0) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Set ${track.name} Eighth Hats`,
+              `Place hats on 8th-note steps in bar ${barIndex + 1}`,
+              ops,
+              0.99
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
+      /^(?:give me\s+)?(?:a\s+)?(?:(?:4|four)\s+on\s+the\s+floor|4otf)(?:\s+kick)?(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
     );
     if (match && track.type === "drums") {
       const barIndex = clamp(

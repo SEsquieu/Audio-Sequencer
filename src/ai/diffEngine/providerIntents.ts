@@ -68,6 +68,17 @@ interface SetDrumStepIntent {
   note?: string;
 }
 
+interface SetDrumStepsIntent {
+  type: "set_drum_steps";
+  track?: string;
+  barIndex?: number;
+  lanes?: Array<"kick" | "snare" | "hat">;
+  steps?: number[];
+  value?: number;
+  confidence?: number;
+  note?: string;
+}
+
 interface RotateDrumBarStepsIntent {
   type: "rotate_drum_bar_steps";
   track?: string;
@@ -160,6 +171,7 @@ type ProviderIntentLike =
   | RouteTrackSendBusIntent
   | SetTrackFxParamIntent
   | SetDrumStepIntent
+  | SetDrumStepsIntent
   | RotateDrumBarStepsIntent
   | TransposeTrackBarNotesIntent
   | CopyTrackBarAssignmentIntent
@@ -524,6 +536,28 @@ const toCanonicalCommand = (value: unknown, request: DiffEngineRequest): Canonic
     }
   }
 
+  if (type === "set_drum_steps") {
+    const intent = raw as unknown as SetDrumStepsIntent;
+    const lanes = (intent.lanes ?? [])
+      .filter((lane): lane is "kick" | "snare" | "hat" => lane === "kick" || lane === "snare" || lane === "hat");
+    const uniqueLanes = [...new Set(lanes)];
+    const steps = [...new Set((intent.steps ?? []).map((step) => Math.max(0, Math.min(15, Math.round(step)))))];
+    if (uniqueLanes.length === 0 || steps.length === 0) {
+      return null;
+    }
+    const track = resolveTrackName(request, intent.track);
+    const valueToken = Math.round(clamp01(typeof intent.value === "number" ? intent.value : 1) * 100);
+    const laneToken = uniqueLanes.join(" ");
+    const stepToken = steps.map((step) => step + 1).join(" and ");
+    const barToken = typeof intent.barIndex === "number" ? ` in bar ${Math.round(intent.barIndex) + 1}` : "";
+    return {
+      type: "canonical_command",
+      command: `${laneToken} ${valueToken === 100 ? "on" : `${valueToken}%`} step ${stepToken} on ${track}${barToken}`,
+      confidence: intent.confidence,
+      note: intent.note,
+    };
+  }
+
   if (type === "rotate_drum_bar_steps") {
     const intent = raw as unknown as RotateDrumBarStepsIntent;
     const track = resolveTrackName(request, intent.track);
@@ -845,6 +879,48 @@ const toTypedPlanCandidate = (value: unknown, request: DiffEngineRequest): DiffP
     };
   }
 
+  if (type === "set_drum_steps") {
+    const intent = raw as unknown as SetDrumStepsIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "drums") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const lanes = (intent.lanes ?? [])
+      .filter((lane): lane is "kick" | "snare" | "hat" => lane === "kick" || lane === "snare" || lane === "hat");
+    const uniqueLanes = [...new Set(lanes)];
+    const steps = (intent.steps ?? []).map((step) => Math.max(0, Math.min(15, Math.round(step))));
+    const uniqueSteps = [...new Set(steps)];
+    const value = clamp01(typeof intent.value === "number" ? intent.value : 1);
+    if (uniqueLanes.length === 0 || uniqueSteps.length === 0) {
+      return null;
+    }
+    const entries = uniqueSteps.flatMap((stepIndex) =>
+      uniqueLanes.map((lane) => ({
+        stepIndex,
+        lane,
+        value,
+      }))
+    );
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.78,
+      label: `Set ${track.name} Drum Steps`,
+      explanation:
+        intent.note ??
+        `Set ${uniqueLanes.join(", ")} on steps ${uniqueSteps.map((s) => s + 1).join(", ")} in bar ${barIndex + 1}`,
+      actions: [
+        {
+          type: "set_drum_step_batch",
+          trackId: track.id,
+          barIndex,
+          entries,
+        },
+      ],
+    };
+  }
+
   if (type === "rotate_drum_bar_steps") {
     const intent = raw as unknown as RotateDrumBarStepsIntent;
     const track = resolveTrack(request, intent.track);
@@ -1134,6 +1210,7 @@ export const compileProviderIntentsToPlans = (
 
   const isSequenceFriendlyAction = (action: DiffPlanCandidate["actions"][number]) =>
     action.type === "set_drum_step" ||
+    action.type === "set_drum_step_batch" ||
     action.type === "rotate_drum_bar_steps" ||
     action.type === "transpose_track_bar_notes" ||
     action.type === "set_synth_step_notes_field" ||

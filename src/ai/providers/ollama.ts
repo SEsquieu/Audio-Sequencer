@@ -175,6 +175,7 @@ Rules:
 - Use ONLY commands from this supported set (prefer exact phrasing):
 ${formatSupportedCommandList(context)}
 - Prefer exact track names from the provided track list.
+- For compact drum patterns (multiple lanes/steps), prefer a typed intent like {"type":"set_drum_steps",...} when possible.
 - Return executable commands only. Do NOT return regex patterns, grammar alternatives, placeholders, or meta syntax.
 - Never use symbols like "|" or bracketed option lists (e.g. "kick|snare|hat").
 - If unsupported or ambiguous, return an empty intents array.
@@ -193,6 +194,8 @@ Examples:
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick on step 1, 5, 9, 13","confidence":0.8}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick step 1 on","confidence":0.78},{"type":"canonical_command","command":"kick step 9 on","confidence":0.78}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note c4 step 1 on lead","confidence":0.74},{"type":"canonical_command","command":"add note e4 step 1 on lead","confidence":0.74},{"type":"canonical_command","command":"add note g4 step 1 on lead","confidence":0.74}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"set_drum_steps","track":"drums","lanes":["kick","snare"],"steps":[4,12],"value":1,"confidence":0.8}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"set_drum_steps","track":"drums","lanes":["kick"],"steps":[0,4,8,12],"value":1,"confidence":0.84}]}
 Invalid (do not do this): {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick|snare|hat step 1 on","confidence":0.6}]}
 Valid instead: {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"kick step 1 on","confidence":0.78}]}
 
