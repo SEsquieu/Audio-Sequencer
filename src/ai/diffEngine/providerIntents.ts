@@ -116,6 +116,42 @@ interface SetSynthStepNotesFieldIntent {
   note?: string;
 }
 
+interface AddSynthStepNoteIntent {
+  type: "add_synth_step_note";
+  track?: string;
+  barIndex?: number;
+  stepIndex?: number;
+  pitch?: number;
+  length?: number;
+  velocity?: number;
+  confidence?: number;
+  note?: string;
+}
+
+interface RemoveSynthStepNoteIntent {
+  type: "remove_synth_step_note";
+  track?: string;
+  barIndex?: number;
+  stepIndex?: number;
+  pitch?: number;
+  occurrence?: number;
+  confidence?: number;
+  note?: string;
+}
+
+interface SetSynthStepNotePitchIntent {
+  type: "set_synth_step_note_pitch";
+  track?: string;
+  barIndex?: number;
+  stepIndex?: number;
+  fromPitch?: number;
+  noteIndex?: number;
+  occurrence?: number;
+  toPitch?: number;
+  confidence?: number;
+  note?: string;
+}
+
 type ProviderIntentLike =
   | CanonicalCommandIntent
   | SetTrackGainIntent
@@ -129,6 +165,9 @@ type ProviderIntentLike =
   | CopyTrackBarAssignmentIntent
   | RotateTrackBarAssignmentsIntent
   | SetSynthStepNotesFieldIntent
+  | AddSynthStepNoteIntent
+  | RemoveSynthStepNoteIntent
+  | SetSynthStepNotePitchIntent
   | string
   | {
       type?: string;
@@ -505,6 +544,52 @@ const toCanonicalCommand = (value: unknown, request: DiffEngineRequest): Canonic
     }
   }
 
+  if (type === "add_synth_step_note") {
+    const intent = raw as unknown as AddSynthStepNoteIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (typeof intent.stepIndex === "number" && typeof intent.pitch === "number") {
+      const maybeBar = typeof intent.barIndex === "number" ? ` in bar ${Math.round(intent.barIndex + 1)}` : "";
+      const maybeLen = typeof intent.length === "number" ? ` len ${Math.max(1, Math.min(16, Math.round(intent.length)))}` : "";
+      const maybeVel =
+        typeof intent.velocity === "number" ? ` vel ${Math.round(clamp01(intent.velocity) * 100)}%` : "";
+      return {
+        type: "canonical_command",
+        command: `add note ${Math.round(intent.pitch)} step ${Math.round(intent.stepIndex + 1)} on ${track}${maybeBar}${maybeLen}${maybeVel}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
+  if (type === "remove_synth_step_note") {
+    const intent = raw as unknown as RemoveSynthStepNoteIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (typeof intent.stepIndex === "number" && typeof intent.pitch === "number") {
+      const maybeBar = typeof intent.barIndex === "number" ? ` in bar ${Math.round(intent.barIndex + 1)}` : "";
+      return {
+        type: "canonical_command",
+        command: `remove note ${Math.round(intent.pitch)} step ${Math.round(intent.stepIndex + 1)} on ${track}${maybeBar}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
+  if (type === "set_synth_step_note_pitch") {
+    const intent = raw as unknown as SetSynthStepNotePitchIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (typeof intent.stepIndex === "number" && typeof intent.toPitch === "number") {
+      const from = typeof intent.fromPitch === "number" ? Math.round(intent.fromPitch) : "note";
+      const maybeBar = typeof intent.barIndex === "number" ? ` in bar ${Math.round(intent.barIndex + 1)}` : "";
+      return {
+        type: "canonical_command",
+        command: `set note ${from} to ${Math.round(intent.toPitch)} step ${Math.round(intent.stepIndex + 1)} on ${track}${maybeBar}`,
+        confidence: intent.confidence,
+        note: intent.note,
+      };
+    }
+  }
+
   return null;
 };
 
@@ -839,6 +924,95 @@ const toTypedPlanCandidate = (value: unknown, request: DiffEngineRequest): DiffP
           value,
         },
       ],
+    };
+  }
+
+  if (type === "add_synth_step_note") {
+    const intent = raw as unknown as AddSynthStepNoteIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "synth" || typeof intent.stepIndex !== "number" || typeof intent.pitch !== "number") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const stepIndex = Math.max(0, Math.min(15, Math.round(intent.stepIndex)));
+    const pitch = Math.max(0, Math.min(127, Math.round(intent.pitch)));
+    const length = typeof intent.length === "number" ? Math.max(1, Math.min(16, Math.round(intent.length))) : undefined;
+    const velocity = typeof intent.velocity === "number" ? clamp01(intent.velocity) : undefined;
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.72,
+      label: `Add ${track.name} Note`,
+      explanation: intent.note ?? `Add note ${pitch} to ${track.name} step ${stepIndex + 1}`,
+      actions: [
+        {
+          type: "add_synth_step_note",
+          trackId: track.id,
+          barIndex,
+          stepIndex,
+          pitch,
+          ...(length !== undefined ? { length } : {}),
+          ...(velocity !== undefined ? { velocity } : {}),
+        },
+      ],
+    };
+  }
+
+  if (type === "remove_synth_step_note") {
+    const intent = raw as unknown as RemoveSynthStepNoteIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "synth" || typeof intent.stepIndex !== "number" || typeof intent.pitch !== "number") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const stepIndex = Math.max(0, Math.min(15, Math.round(intent.stepIndex)));
+    const pitch = Math.max(0, Math.min(127, Math.round(intent.pitch)));
+    const occurrence = typeof intent.occurrence === "number" ? Math.max(0, Math.round(intent.occurrence)) : undefined;
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.7,
+      label: `Remove ${track.name} Note`,
+      explanation: intent.note ?? `Remove note ${pitch} from ${track.name} step ${stepIndex + 1}`,
+      actions: [
+        {
+          type: "remove_synth_step_note",
+          trackId: track.id,
+          barIndex,
+          stepIndex,
+          pitch,
+          ...(occurrence !== undefined ? { occurrence } : {}),
+        },
+      ],
+    };
+  }
+
+  if (type === "set_synth_step_note_pitch") {
+    const intent = raw as unknown as SetSynthStepNotePitchIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "synth" || typeof intent.stepIndex !== "number" || typeof intent.toPitch !== "number") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const stepIndex = Math.max(0, Math.min(15, Math.round(intent.stepIndex)));
+    const toPitch = Math.max(0, Math.min(127, Math.round(intent.toPitch)));
+    const payload: any = {
+      type: "set_synth_step_note_pitch",
+      trackId: track.id,
+      barIndex,
+      stepIndex,
+      toPitch,
+    };
+    if (typeof intent.noteIndex === "number") payload.noteIndex = Math.max(0, Math.round(intent.noteIndex));
+    if (typeof intent.fromPitch === "number") payload.fromPitch = Math.max(0, Math.min(127, Math.round(intent.fromPitch)));
+    if (typeof intent.occurrence === "number") payload.occurrence = Math.max(0, Math.round(intent.occurrence));
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.72,
+      label: `Retune ${track.name} Note`,
+      explanation: intent.note ?? `Change note pitch on ${track.name} step ${stepIndex + 1}`,
+      actions: [payload],
     };
   }
 

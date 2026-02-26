@@ -114,7 +114,7 @@ Priority: `Medium`
 - Broaden supported commands across:
   - track/bar operations
   - pattern edits
-  - selective note-step edits
+  - selective note-step edits (including add/remove/retune note flows)
 - Improve typed intent compilation coverage and confidence gating
 - Increase provider prompt parity (Ollama / OpenAI / Anthropic)
 
@@ -137,7 +137,7 @@ Priority: `Medium`
 - Expand provider prompt examples for track/bar commands across all providers
 - Add parser/compiler coverage tests (or lightweight fixtures) for canonical commands
 - Tighten provider status refresh after settings changes
-- Continue track/bar command coverage expansion before deeper insert-control work
+- Continue pattern/note command coverage expansion before deeper insert-control work
 
 ## P2 (Important, but can follow current phase)
 

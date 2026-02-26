@@ -179,6 +179,45 @@ const parseStepValue = (raw: string): number | null => {
 
 const parseBarIndex1 = (raw: string, max: number): number => clamp(Math.round(Number(raw)) - 1, 0, Math.max(0, max));
 
+const NOTE_TO_SEMITONE: Record<string, number> = {
+  c: 0,
+  "c#": 1,
+  db: 1,
+  d: 2,
+  "d#": 3,
+  eb: 3,
+  e: 4,
+  f: 5,
+  "f#": 6,
+  gb: 6,
+  g: 7,
+  "g#": 8,
+  ab: 8,
+  a: 9,
+  "a#": 10,
+  bb: 10,
+  b: 11,
+};
+
+const parsePitchToken = (raw: string): number | null => {
+  const token = raw.trim().toLowerCase();
+  if (/^\d{1,3}$/.test(token)) {
+    const n = Math.round(Number(token));
+    return Number.isFinite(n) ? clamp(n, 0, 127) : null;
+  }
+  const match = token.match(/^([a-g])([#b]?)(-?\d)$/);
+  if (!match) {
+    return null;
+  }
+  const noteName = `${match[1]}${match[2] || ""}`;
+  const semitone = NOTE_TO_SEMITONE[noteName];
+  const octave = Number(match[3]);
+  if (!Number.isFinite(semitone) || !Number.isFinite(octave)) {
+    return null;
+  }
+  return clamp((octave + 1) * 12 + semitone, 0, 127);
+};
+
 export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPlanCandidate[] => {
   const text = norm(request.prompt);
   const song = request.song;
@@ -483,6 +522,93 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
                 `Set ${track.name} ${field}`,
                 `Set ${field} on ${track.name} step ${stepIndex + 1} in bar ${barIndex + 1}`,
                 ops,
+                0.97
+              )
+            );
+            return candidates;
+          }
+        }
+      }
+    }
+
+    match = text.match(
+      /^(?:set|move)\s+note\s+([a-g][#b]?-?\d|\d{1,3})\s+to\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (match && track.type === "synth") {
+      const fromPitch = parsePitchToken(match[1]);
+      const toPitch = parsePitchToken(match[2]);
+      const stepIndex = clamp(Math.round(Number(match[3])) - 1, 0, 15);
+      const barIndex = clamp(
+        (match[4] ? Math.round(Number(match[4])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "synth" && fromPitch !== null && toPitch !== null) {
+        const cell = pattern.steps[stepIndex] ?? [];
+        const noteIndex = cell.findIndex((note) => Math.round(note.pitch) === fromPitch);
+        if (noteIndex >= 0 && !cell.some((note, idx) => idx !== noteIndex && Math.round(note.pitch) === toPitch)) {
+          candidates.push(
+            wrapPatchCandidate(
+              `Retune ${track.name} Note`,
+              `Move note ${fromPitch} to ${toPitch} on ${track.name} step ${stepIndex + 1} in bar ${barIndex + 1}`,
+              [
+                {
+                  op: "replace",
+                  path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${noteIndex}/pitch`,
+                  value: toPitch,
+                },
+              ],
+              0.97
+            )
+          );
+          return candidates;
+        }
+      }
+    }
+
+    match = text.match(
+      /^(add|remove|delete)\s+note\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+len(?:gth)?\s+(\d{1,2}))?(?:\s+vel(?:ocity)?\s+([\d.]+%?))?$/
+    );
+    if (match && track.type === "synth") {
+      const mode = match[1];
+      const pitch = parsePitchToken(match[2]);
+      const stepIndex = clamp(Math.round(Number(match[3])) - 1, 0, 15);
+      const barIndex = clamp(
+        (match[4] ? Math.round(Number(match[4])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "synth" && pitch !== null) {
+        const cell = pattern.steps[stepIndex] ?? [];
+        if (mode === "add") {
+          const length = match[5] ? clamp(Math.round(Number(match[5])), 1, 16) : 1;
+          const velocity = match[6] ? clamp(parsePercentOrUnit(match[6]), 0, 1) : 1;
+          if (Number.isFinite(velocity)) {
+            const duplicate = cell.some((note) => note.pitch === pitch && note.length === length && note.velocity === velocity);
+            if (!duplicate) {
+              candidates.push(
+                wrapPatchCandidate(
+                  `Add ${track.name} Note`,
+                  `Add note ${pitch} to ${track.name} step ${stepIndex + 1} in bar ${barIndex + 1}`,
+                  [{ op: "add", path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/-`, value: { pitch, length, velocity } }],
+                  0.97
+                )
+              );
+              return candidates;
+            }
+          }
+        } else {
+          const noteIndex = cell.findIndex((note) => Math.round(note.pitch) === pitch);
+          if (noteIndex >= 0) {
+            candidates.push(
+              wrapPatchCandidate(
+                `Remove ${track.name} Note`,
+                `Remove note ${pitch} from ${track.name} step ${stepIndex + 1} in bar ${barIndex + 1}`,
+                [{ op: "remove", path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}/${noteIndex}` }],
                 0.97
               )
             );

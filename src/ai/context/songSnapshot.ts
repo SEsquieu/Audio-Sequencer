@@ -27,6 +27,9 @@ const SUPPORTED_CANONICAL_COMMANDS = [
   "transpose <track> up|down <semitones> [in bar <n>]",
   "velocity step <n> <percent>% on <track> [in bar <n>]",
   "length step <n> <steps> on <track> [in bar <n>]",
+  "add note <pitch> step <n> on <track> [in bar <n>] [len <steps>] [vel <percent>%]",
+  "remove note <pitch> step <n> on <track> [in bar <n>]",
+  "set note <fromPitch> to <toPitch> step <n> on <track> [in bar <n>]",
 ];
 
 const summarizeFxParams = (fx: SongState["tracks"][number]["insertFx"][number]["params"]) => {

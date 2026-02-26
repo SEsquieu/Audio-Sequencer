@@ -145,6 +145,9 @@ const DEFAULT_SUPPORTED_COMMANDS = [
   "add saturator to <track>",
   "add eq3 to <track>",
   "rotate drum steps by <steps> [in bar <n>]",
+  "add note <pitch> step <n> on <track> [in bar <n>]",
+  "remove note <pitch> step <n> on <track> [in bar <n>]",
+  "set note <fromPitch> to <toPitch> step <n> on <track> [in bar <n>]",
 ];
 
 const formatSupportedCommandList = (context?: AiPromptContext) => {

@@ -124,6 +124,39 @@ export type DiffPlanAction =
       value: number;
       label?: string;
       explanation?: string;
+    }
+  | {
+      type: "add_synth_step_note";
+      trackId: string;
+      barIndex: number;
+      stepIndex: number;
+      pitch: number;
+      length?: number;
+      velocity?: number;
+      label?: string;
+      explanation?: string;
+    }
+  | {
+      type: "remove_synth_step_note";
+      trackId: string;
+      barIndex: number;
+      stepIndex: number;
+      pitch: number;
+      occurrence?: number;
+      label?: string;
+      explanation?: string;
+    }
+  | {
+      type: "set_synth_step_note_pitch";
+      trackId: string;
+      barIndex: number;
+      stepIndex: number;
+      fromPitch?: number;
+      noteIndex?: number;
+      occurrence?: number;
+      toPitch: number;
+      label?: string;
+      explanation?: string;
     };
 
 export interface DiffPlanCandidate {

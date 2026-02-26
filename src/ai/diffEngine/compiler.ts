@@ -380,6 +380,165 @@ export const compileDiffPlanCandidate = (plan: DiffPlanCandidate, song: SongStat
       }
       continue;
     }
+    if (action.type === "add_synth_step_note") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for add_synth_step_note (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "synth") {
+        warnings.push(`Track is not synth for add_synth_step_note (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for add_synth_step_note (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for add_synth_step_note`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "synth") {
+        warnings.push(`Synth pattern not found (${patternId})`);
+        continue;
+      }
+      if (action.stepIndex < 0 || action.stepIndex >= pattern.steps.length) {
+        warnings.push(`Step index out of range for add_synth_step_note (${action.stepIndex})`);
+        continue;
+      }
+      const cell = pattern.steps[action.stepIndex];
+      const pitch = Math.max(0, Math.min(127, Math.round(action.pitch)));
+      const length = Math.max(1, Math.min(16, Math.round(Number.isFinite(action.length) ? action.length! : 1)));
+      const velocity = Math.max(0, Math.min(1, Number.isFinite(action.velocity) ? action.velocity! : 1));
+      const duplicateIndex = cell.findIndex(
+        (note) => note.pitch === pitch && note.length === length && note.velocity === velocity
+      );
+      if (duplicateIndex >= 0) {
+        warnings.push(`Identical synth note already exists at step ${action.stepIndex + 1}`);
+        continue;
+      }
+      compiledOps.push({
+        op: "add",
+        path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${action.stepIndex}/-`,
+        value: { pitch, length, velocity },
+      });
+      continue;
+    }
+    if (action.type === "remove_synth_step_note") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for remove_synth_step_note (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "synth") {
+        warnings.push(`Track is not synth for remove_synth_step_note (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for remove_synth_step_note (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for remove_synth_step_note`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "synth") {
+        warnings.push(`Synth pattern not found (${patternId})`);
+        continue;
+      }
+      if (action.stepIndex < 0 || action.stepIndex >= pattern.steps.length) {
+        warnings.push(`Step index out of range for remove_synth_step_note (${action.stepIndex})`);
+        continue;
+      }
+      const cell = pattern.steps[action.stepIndex];
+      const pitch = Math.max(0, Math.min(127, Math.round(action.pitch)));
+      const matches = cell
+        .map((note, idx) => ({ note, idx }))
+        .filter(({ note }) => Math.round(note.pitch) === pitch)
+        .map(({ idx }) => idx);
+      if (matches.length === 0) {
+        warnings.push(`No synth note with pitch ${pitch} at step ${action.stepIndex + 1}`);
+        continue;
+      }
+      const occurrence = Math.max(0, Math.round(Number.isFinite(action.occurrence) ? action.occurrence! : 0));
+      const noteIndex = matches[Math.min(occurrence, matches.length - 1)];
+      compiledOps.push({
+        op: "remove",
+        path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${action.stepIndex}/${noteIndex}`,
+      });
+      continue;
+    }
+    if (action.type === "set_synth_step_note_pitch") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for set_synth_step_note_pitch (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "synth") {
+        warnings.push(`Track is not synth for set_synth_step_note_pitch (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for set_synth_step_note_pitch (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for set_synth_step_note_pitch`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "synth") {
+        warnings.push(`Synth pattern not found (${patternId})`);
+        continue;
+      }
+      if (action.stepIndex < 0 || action.stepIndex >= pattern.steps.length) {
+        warnings.push(`Step index out of range for set_synth_step_note_pitch (${action.stepIndex})`);
+        continue;
+      }
+      const cell = pattern.steps[action.stepIndex];
+      if (!Array.isArray(cell) || cell.length === 0) {
+        warnings.push(`No synth notes at step ${action.stepIndex + 1} for set_synth_step_note_pitch`);
+        continue;
+      }
+      let noteIndex = typeof action.noteIndex === "number" ? Math.round(action.noteIndex) : -1;
+      if (!(noteIndex >= 0 && noteIndex < cell.length)) {
+        if (typeof action.fromPitch === "number") {
+          const fromPitch = Math.max(0, Math.min(127, Math.round(action.fromPitch)));
+          const matches = cell
+            .map((note, idx) => ({ idx, pitch: Math.round(note.pitch) }))
+            .filter((item) => item.pitch === fromPitch)
+            .map((item) => item.idx);
+          if (matches.length === 0) {
+            warnings.push(`No synth note with pitch ${fromPitch} at step ${action.stepIndex + 1}`);
+            continue;
+          }
+          const occurrence = Math.max(0, Math.round(Number.isFinite(action.occurrence) ? action.occurrence! : 0));
+          noteIndex = matches[Math.min(occurrence, matches.length - 1)];
+        } else {
+          warnings.push("Missing note selector for set_synth_step_note_pitch");
+          continue;
+        }
+      }
+      const toPitch = Math.max(0, Math.min(127, Math.round(action.toPitch)));
+      if (Math.round(cell[noteIndex].pitch) === toPitch) {
+        warnings.push("No-op pitch change for set_synth_step_note_pitch");
+        continue;
+      }
+      compiledOps.push({
+        op: "replace",
+        path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${action.stepIndex}/${noteIndex}/pitch`,
+        value: toPitch,
+      });
+      continue;
+    }
   }
 
   const ops = normalizeOps(compiledOps);
