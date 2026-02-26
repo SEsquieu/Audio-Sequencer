@@ -1,4 +1,4 @@
-# Audio Sequencer
+# Grinning Frog Sequencer
 
 A browser-based sequencer built with Vite + React + TypeScript.
 

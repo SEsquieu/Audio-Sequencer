@@ -49,9 +49,28 @@ select {
   gap: 0.5rem;
 }
 
+.topbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.topbar-logo {
+  width: 1.6rem;
+  height: 1.6rem;
+  object-fit: contain;
+  border-radius: 0.35rem;
+  flex: 0 0 auto;
+}
+
 .topbar h1 {
   margin: 0;
   font-size: 1rem;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .top-controls {

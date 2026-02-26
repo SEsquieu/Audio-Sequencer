@@ -3341,9 +3341,12 @@ function App() {
       onPointerDownCapture={() => {
         void getOrCreateEngine().ensureContext();
       }}
-    >
+      >
       <header className="topbar">
-        <h1>Beepbox x Strudel x AI Patch</h1>
+        <div className="topbar-brand" aria-label="Grinning Frog Sequencer">
+          <img src="/GF_Logo_small.bmp" alt="" className="topbar-logo" />
+          <h1>Grinning Frog Sequencer</h1>
+        </div>
         <div className="top-controls">
           <div className="control-group transport-group">
             <button
