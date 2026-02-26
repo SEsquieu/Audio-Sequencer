@@ -1980,6 +1980,19 @@ function App() {
 
   const aiFallbackState = aiDiagnostics?.usedFallback ? classifyAiFallbackReason(aiDiagnostics.fallbackReason) : null;
   const aiProviderRouteStatusLabel = isAiGenerating ? "Running" : aiDiagnostics?.usedFallback ? "Fallback" : aiDiagnostics ? "Completed" : "Idle";
+  const aiTraceLastResultLabel = (() => {
+    if (!aiDiagnostics) return "None";
+    if (aiDiagnostics.routeReason === "Canceled") {
+      return aiFallbackState ? `Canceled (${aiFallbackState.label})` : "Canceled";
+    }
+    if (aiDiagnostics.usedFallback) {
+      return aiFallbackState ? `Fallback (${aiFallbackState.label})` : "Fallback";
+    }
+    if (candidates.length > 0) {
+      return "Success";
+    }
+    return "No proposals";
+  })();
   const canRetryAiPrompt = !isAiGenerating && !!lastSubmittedPrompt.trim() && (filteredCandidates.length === 0 || !!aiDiagnostics?.usedFallback);
   const aiNoProposalMessage =
     candidates.length > 0
@@ -4471,6 +4484,12 @@ function App() {
                     <div className="ai-trace-value">{aiDiagnostics.rejectedProviderIntentCount}</div>
                   </div>
                 )}
+                <div>
+                  <div className="ai-trace-label">Last Result</div>
+                  <div className="ai-trace-value" title={aiFallbackState?.detail}>
+                    {aiTraceLastResultLabel}
+                  </div>
+                </div>
                 {aiDiagnostics.usedFallback && (
                   <div>
                     <div className="ai-trace-label">Fallback Outcome</div>

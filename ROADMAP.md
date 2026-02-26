@@ -20,14 +20,14 @@ Build a browser-based sequencer with:
 
 ## Current Phase (As of 2026-02-26)
 
-`Phase F planning / alignment (Provider UX + stability hardening)`
+`Phase F (Provider UX + stability hardening) - in progress`
 
 Current emphasis:
 
-- lock Phase F scope and success criteria before implementation
 - preserve Phase E gains while shifting focus from capability expansion to reliability/polish
 - prioritize provider UX trust (status, timeouts, fallback clarity) over new command vocabulary
-- continue Phase F provider status lifecycle hardening + diagnostics clarity (selected-provider probes, clearer status semantics)
+- finish Phase F request lifecycle polish (cancelation/superseded clarity, retry affordances, stale-state edge cases)
+- keep provider probes scoped/lazy (selected-provider-first) to reduce surprise network/permission prompts
 
 ## Execution Discipline (Cross-Workstation Safety)
 
@@ -46,7 +46,7 @@ To reduce ambiguity during fast iteration (especially across multiple workstatio
 - Keep deterministic parser and provider command vocabulary aligned
 - Preserve local validation/patch compilation as the only state mutation path
 
-### Phase F Goals (Planned / Alignment)
+### Phase F Goals (Active)
 
 1. Make provider readiness/status updates reliable and understandable
 2. Make timeout/fallback behavior explicit in Smart Patch UI (no silent confusion)
@@ -83,16 +83,17 @@ To reduce ambiguity during fast iteration (especially across multiple workstatio
 - Provider sequence-candidate grouping for multi-step pattern edits
 - Phase E typed action expansion for note/pattern/arrangement edits (broad coverage checkpoint)
 - Drum groove parser macros + typed batched drum-step provider path (`set_drum_steps` -> `set_drum_step_batch`)
+- Phase F provider UX hardening (selected-provider-first probes, save-triggered reprobes, clearer fallback/status diagnostics, retry affordances)
 
 ## Active Focus (Near-Term)
 
-### 1. Phase F Definition + UX Reliability Prep
+### 1. Phase F Provider UX / Stability Hardening (In Progress)
 
 Priority: `High`
 
-- Finalize Phase F scope, success criteria, and out-of-scope list before implementation
 - Keep current Phase E command coverage stable while shifting effort to provider UX reliability
-- Tie known provider UX issues (for example `KB-001`) to concrete Phase F tasks
+- Continue request lifecycle hardening (cancel/superseded clarity, stale-response edge cases, retry affordances)
+- Preserve trust signals in Smart Patch (status semantics, fallback clarity, actionable empty states)
 
 ### 2. Provider UX Reliability / Feedback
 
@@ -100,6 +101,7 @@ Priority: `Medium`
 
 - Reduce stale `Checking…` provider status states (save-triggered reprobes now in place; continue edge-case validation)
 - Probe on relevant settings saves (model/API key/provider selection) and keep probes selected-provider-first
+- Keep a manual selected-provider refresh control for explicit re-checks
 - Improve readiness/error messaging clarity
 - Revisit provider probe strategy to avoid surprise permission/network prompts (lazy + selected-provider-first checks)
 - Clarify timeout vs parse-failure vs fallback messaging in Smart Patch diagnostics/UI
