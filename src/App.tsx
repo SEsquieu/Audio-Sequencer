@@ -1759,6 +1759,13 @@ function App() {
         );
       } else {
         setCandidates([]);
+        setAiDiagnostics({
+          selectedProviderId: "smartPatch-local",
+          fallbackProviderIds: [],
+          routeReason: "Error",
+          usedFallback: true,
+          fallbackReason: error instanceof Error ? error.message : "Unexpected generation error",
+        });
         console.warn("[ai] candidate generation failed", error);
       }
     } finally {
@@ -1965,6 +1972,14 @@ function App() {
   };
 
   const aiFallbackState = aiDiagnostics?.usedFallback ? classifyAiFallbackReason(aiDiagnostics.fallbackReason) : null;
+  const aiNoProposalMessage =
+    candidates.length > 0
+      ? "No proposals match the current AI filters. Toggle Selected Track Only or Live-Safe While Playing."
+      : aiDiagnostics?.usedFallback
+        ? `No proposals after fallback (${aiFallbackState?.label ?? "local fallback"}). Try rephrasing, using a more direct command, or refreshing provider status.`
+        : aiDiagnostics
+          ? "No proposals were generated for that prompt. Try a more direct command or a narrower scope."
+          : "No proposals yet. Use a prompt below.";
 
   const addTrackFx = (trackIndex: number, type: FxType) => {
     createAndCommit(`Add ${FX_TYPE_LABEL[type]} FX`, [
@@ -4458,9 +4473,7 @@ function App() {
           )}
           {filteredCandidates.length === 0 && !isAiGenerating && (
             <div className="ai-empty-state">
-              {candidates.length > 0
-                ? "No proposals match the current AI filters. Toggle Selected Track Only or Live-Safe While Playing."
-                : "No proposals yet. Use a prompt below."}
+              {aiNoProposalMessage}
             </div>
           )}
           {filteredCandidates.map((candidate, idx) => {
