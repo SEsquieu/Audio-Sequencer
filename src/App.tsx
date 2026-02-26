@@ -2076,7 +2076,14 @@ function App() {
   };
 
   const aiFallbackState = aiDiagnostics?.usedFallback ? classifyAiFallbackReason(aiDiagnostics.fallbackReason) : null;
-  const aiProviderRouteStatusLabel = isAiGenerating ? "Running" : aiDiagnostics?.usedFallback ? "Fallback" : aiDiagnostics ? "Completed" : "Idle";
+  const aiProviderRouteStatus = (() => {
+    if (isAiGenerating) return { key: "running", label: "Running" };
+    if (!aiDiagnostics) return { key: "idle", label: "Idle" };
+    if (aiDiagnostics.routeReason === "Canceled") return { key: "canceled", label: "Canceled" };
+    if (aiDiagnostics.routeReason === "Error") return { key: "error", label: "Error" };
+    if (aiDiagnostics.usedFallback) return { key: "fallback", label: "Fallback" };
+    return { key: "completed", label: "Completed" };
+  })();
   const aiTraceLastResultLabel = (() => {
     if (!aiDiagnostics) return "None";
     if (aiDiagnostics.routeReason === "Canceled") {
@@ -2094,7 +2101,11 @@ function App() {
   const aiNoProposalMessage =
     candidates.length > 0
       ? "No proposals match the current AI filters. Toggle Selected Track Only or Live-Safe While Playing."
-      : aiDiagnostics?.usedFallback
+      : aiDiagnostics?.routeReason === "Canceled"
+        ? `Generation was canceled (${aiFallbackState?.label ?? "request canceled"}). Retry when you're ready.`
+        : aiDiagnostics?.routeReason === "Error"
+          ? `Generation failed (${aiFallbackState?.label ?? "error"}). Retry or refresh provider status.`
+          : aiDiagnostics?.usedFallback
         ? `No proposals after fallback (${aiFallbackState?.label ?? "local fallback"}). Try rephrasing, using a more direct command, or refreshing provider status.`
         : aiDiagnostics
           ? "No proposals were generated for that prompt. Try a more direct command or a narrower scope."
@@ -4545,7 +4556,7 @@ function App() {
           {aiDiagnostics && (
             <div className="ai-debug-state">
               <strong>{aiDiagnostics.selectedProviderId}</strong>
-              <span className="ai-debug-pill">{aiProviderRouteStatusLabel}</span>
+              <span className={`ai-debug-pill ${aiProviderRouteStatus.key}`}>{aiProviderRouteStatus.label}</span>
               <span>{aiDiagnostics.routeReason}</span>
               {aiExplicitPromptTrackScopeLabel && (
                 <span title="Prompt explicitly targets track scope">

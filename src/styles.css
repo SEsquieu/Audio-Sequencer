@@ -2757,6 +2757,36 @@ input[type="range"] {
   letter-spacing: 0.02em;
 }
 
+.ai-debug-pill.running {
+  border-color: #355b47;
+  background: #09140f;
+  color: #e7fff0;
+}
+
+.ai-debug-pill.completed {
+  border-color: #2d6144;
+  background: #07130d;
+  color: #c7f7dd;
+}
+
+.ai-debug-pill.fallback {
+  border-color: #6a5528;
+  background: #151006;
+  color: #f6e1ad;
+}
+
+.ai-debug-pill.canceled {
+  border-color: #5b4a2f;
+  background: #120f0a;
+  color: #d9c8aa;
+}
+
+.ai-debug-pill.error {
+  border-color: #6a2f35;
+  background: #18090b;
+  color: #ffc8d0;
+}
+
 .ai-inline-actions {
   display: flex;
   gap: 0.35rem;
