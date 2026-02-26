@@ -28,6 +28,31 @@ Current emphasis:
 - improve provider prompt grounding and canonical-command alignment
 - continue UX polish for Smart Patch/provider settings and diagnostics
 
+## Execution Discipline (Cross-Workstation Safety)
+
+To reduce ambiguity during fast iteration (especially across multiple workstations):
+
+- Commit in smaller increments (feature slice + checkpoint)
+- Prefer one concern per commit (parser, provider, UI, docs, etc.)
+- Update `ROADMAP.md` when phase focus changes
+- Add newly found defects/polish items to `KNOWN_BUGS.md`
+- Use commit messages as breadcrumbs for "what changed / why now"
+
+### Current Working Rules
+
+- Do not treat parser alias additions as substitutes for missing typed actions
+- Keep Phase E work focused on capability expansion (new action families + compiler support)
+- Keep deterministic parser and provider command vocabulary aligned
+- Preserve local validation/patch compilation as the only state mutation path
+
+### Current Phase E Goals (Active)
+
+1. Expand typed action coverage for pattern and arrangement edits
+2. Expand deterministic parser phrasing for already-supported actions
+3. Improve provider grounding/context (track/bar/pattern summaries) without large token growth
+4. Reduce ambiguous prompt outcomes with clearer action semantics and candidate labels
+5. Commit checkpoints frequently during feature expansion to preserve context continuity
+
 ## Completed Milestones
 
 ### Core Sequencer + Editing Foundation
@@ -72,6 +97,7 @@ Priority: `Medium`
 - Reduce stale `Checking…` provider status states
 - Probe on relevant settings saves (model/API key/provider selection)
 - Improve readiness/error messaging clarity
+- Revisit provider probe strategy to avoid surprise permission/network prompts (lazy + selected-provider-first checks)
 
 ### 3. Documentation / Context Resilience
 

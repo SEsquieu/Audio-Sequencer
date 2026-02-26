@@ -288,8 +288,8 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
           if (ops.length > 0) {
             candidates.push(
               wrapPatchCandidate(
-                `Rotate ${track.name} Bars`,
-                `Rotate ${track.name} bars ${lo + 1}-${hi + 1} by ${steps}`,
+                `Rotate ${track.name} Bars (Arrangement)`,
+                `Rotate ${track.name} bar assignments ${lo + 1}-${hi + 1} by ${steps}`,
                 ops,
                 0.97
               )
@@ -345,6 +345,62 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
           )
         );
         return candidates;
+      }
+    }
+
+    match = text.match(
+      /^(?:rotate|shift)\s+(?:drum\s+)?(?:pattern\s+)?steps\s+by\s+(-?\d{1,2})(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    );
+    if (!match) {
+      match = text.match(
+        /^(?:rotate|shift)\s+(?:drums?|drum\s+pattern)\s+(?:in\s+bar|bar)\s+(\d{1,3})\s+by\s+(-?\d{1,2})$/
+      );
+      if (match) {
+        match = [match[0], match[2], match[1]] as RegExpMatchArray;
+      }
+    }
+    if (match && track.type === "drums") {
+      const steps = Math.round(Number(match[1]));
+      const barIndex = clamp(
+        (match[2] ? Math.round(Number(match[2])) - 1 : request.scope.selectedBar ?? 0),
+        0,
+        Math.max(0, track.lane.length - 1)
+      );
+      const patternId = track.lane[barIndex];
+      const pattern = patternId && patternId !== "0" ? track.patterns[patternId] : null;
+      if (pattern && pattern.type === "drums" && pattern.steps.length > 1) {
+        const rotation = ((steps % pattern.steps.length) + pattern.steps.length) % pattern.steps.length;
+        if (rotation > 0) {
+          const rotated = pattern.steps
+            .slice(pattern.steps.length - rotation)
+            .concat(pattern.steps.slice(0, pattern.steps.length - rotation));
+          const ops: JsonPatchOp[] = [];
+          rotated.forEach((step, idx) => {
+            const curr = pattern.steps[idx];
+            if (
+              curr.kick !== step.kick ||
+              curr.snare !== step.snare ||
+              curr.hat !== step.hat
+            ) {
+              ops.push({
+                op: "replace",
+                path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${idx}`,
+                value: step,
+              });
+            }
+          });
+          if (ops.length > 0) {
+            candidates.push(
+              wrapPatchCandidate(
+                `Rotate ${track.name} Pattern Steps`,
+                `Rotate ${track.name} drum steps in bar ${barIndex + 1} by ${steps}`,
+                ops,
+                0.97
+              )
+            );
+            return candidates;
+          }
+        }
       }
     }
 

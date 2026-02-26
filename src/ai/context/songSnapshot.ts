@@ -22,6 +22,7 @@ const SUPPORTED_CANONICAL_COMMANDS = [
   "add eq3 to <track>",
   "copy <track> bar <from> to bar <to>",
   "rotate <track> bars <from>-<to> by <steps>",
+  "rotate drum steps by <steps> [in bar <n>]",
   "kick|snare|hat step <n> on|off|<percent>",
   "transpose <track> up|down <semitones> [in bar <n>]",
   "velocity step <n> <percent>% on <track> [in bar <n>]",

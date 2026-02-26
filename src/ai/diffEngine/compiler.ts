@@ -164,6 +164,61 @@ export const compileDiffPlanCandidate = (plan: DiffPlanCandidate, song: SongStat
       });
       continue;
     }
+    if (action.type === "rotate_drum_bar_steps") {
+      const trackIndex = findTrackIndex(action.trackId);
+      if (trackIndex < 0) {
+        warnings.push(`Track not found for rotate_drum_bar_steps (${action.trackId})`);
+        continue;
+      }
+      const track = song.tracks[trackIndex];
+      if (track.type !== "drums") {
+        warnings.push(`Track is not drums for rotate_drum_bar_steps (${track.id})`);
+        continue;
+      }
+      if (action.barIndex < 0 || action.barIndex >= track.lane.length) {
+        warnings.push(`Bar index out of range for rotate_drum_bar_steps (${action.barIndex})`);
+        continue;
+      }
+      const patternId = track.lane[action.barIndex];
+      if (!patternId || patternId === "0") {
+        warnings.push(`No assigned pattern at bar ${action.barIndex + 1} for rotate_drum_bar_steps`);
+        continue;
+      }
+      const pattern = track.patterns[patternId];
+      if (!pattern || pattern.type !== "drums") {
+        warnings.push(`Drum pattern not found (${patternId})`);
+        continue;
+      }
+      const segment = pattern.steps;
+      if (segment.length <= 1) {
+        warnings.push("Rotate range too small for rotate_drum_bar_steps");
+        continue;
+      }
+      const rotation = ((Math.round(action.steps) % segment.length) + segment.length) % segment.length;
+      if (rotation === 0) {
+        warnings.push("No-op rotation for rotate_drum_bar_steps");
+        continue;
+      }
+      const rotated = segment.slice(segment.length - rotation).concat(segment.slice(0, segment.length - rotation));
+      let changed = 0;
+      for (let stepIndex = 0; stepIndex < rotated.length; stepIndex += 1) {
+        const nextStep = rotated[stepIndex];
+        const currentStep = segment[stepIndex];
+        if (JSON.stringify(nextStep) === JSON.stringify(currentStep)) {
+          continue;
+        }
+        compiledOps.push({
+          op: "replace",
+          path: `/tracks/${trackIndex}/patterns/${patternId}/steps/${stepIndex}`,
+          value: nextStep,
+        });
+        changed += 1;
+      }
+      if (changed === 0) {
+        warnings.push("No drum steps changed for rotate_drum_bar_steps");
+      }
+      continue;
+    }
     if (action.type === "transpose_track_bar_notes") {
       const trackIndex = findTrackIndex(action.trackId);
       if (trackIndex < 0) {

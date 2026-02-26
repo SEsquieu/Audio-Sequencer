@@ -68,6 +68,15 @@ interface SetDrumStepIntent {
   note?: string;
 }
 
+interface RotateDrumBarStepsIntent {
+  type: "rotate_drum_bar_steps";
+  track?: string;
+  barIndex?: number;
+  steps?: number;
+  confidence?: number;
+  note?: string;
+}
+
 interface TransposeTrackBarNotesIntent {
   type: "transpose_track_bar_notes";
   track?: string;
@@ -115,6 +124,7 @@ type ProviderIntentLike =
   | RouteTrackSendBusIntent
   | SetTrackFxParamIntent
   | SetDrumStepIntent
+  | RotateDrumBarStepsIntent
   | TransposeTrackBarNotesIntent
   | CopyTrackBarAssignmentIntent
   | RotateTrackBarAssignmentsIntent
@@ -417,6 +427,20 @@ const toCanonicalCommand = (value: unknown, request: DiffEngineRequest): Canonic
     }
   }
 
+  if (type === "rotate_drum_bar_steps") {
+    const intent = raw as unknown as RotateDrumBarStepsIntent;
+    const track = resolveTrackName(request, intent.track);
+    if (typeof intent.steps === "number") {
+      const maybeBar = typeof intent.barIndex === "number" ? ` in bar ${Math.round(intent.barIndex + 1)}` : "";
+      return {
+        type: "canonical_command",
+        command: `rotate drum steps by ${Math.round(intent.steps)}${maybeBar}`,
+        confidence: intent.confidence,
+        note: intent.note ?? (track ? `Rotate drum steps for ${track}` : undefined),
+      };
+    }
+  }
+
   if (type === "transpose_track_bar_notes") {
     const intent = raw as unknown as TransposeTrackBarNotesIntent;
     const track = resolveTrackName(request, intent.track);
@@ -678,6 +702,31 @@ const toTypedPlanCandidate = (value: unknown, request: DiffEngineRequest): DiffP
     };
   }
 
+  if (type === "rotate_drum_bar_steps") {
+    const intent = raw as unknown as RotateDrumBarStepsIntent;
+    const track = resolveTrack(request, intent.track);
+    if (!track || track.type !== "drums" || typeof intent.steps !== "number") {
+      return null;
+    }
+    const barIndex = Math.max(0, Math.round(typeof intent.barIndex === "number" ? intent.barIndex : request.scope.selectedBar ?? 0));
+    const steps = Math.round(intent.steps);
+    return {
+      id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
+      source: "smartPatch",
+      confidence: intent.confidence ?? 0.74,
+      label: `Rotate ${track.name} Pattern Steps`,
+      explanation: intent.note ?? `Rotate ${track.name} drum steps in bar ${barIndex + 1} by ${steps}`,
+      actions: [
+        {
+          type: "rotate_drum_bar_steps",
+          trackId: track.id,
+          barIndex,
+          steps,
+        },
+      ],
+    };
+  }
+
   if (type === "transpose_track_bar_notes") {
     const intent = raw as unknown as TransposeTrackBarNotesIntent;
     const track = resolveTrack(request, intent.track);
@@ -743,10 +792,10 @@ const toTypedPlanCandidate = (value: unknown, request: DiffEngineRequest): DiffP
       id: `provider-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`,
       source: "smartPatch",
       confidence: intent.confidence ?? 0.7,
-      label: `Rotate ${track.name} Bars`,
+      label: `Rotate ${track.name} Bars (Arrangement)`,
       explanation:
         intent.note ??
-        `Rotate ${track.name} bars ${Math.round(intent.fromBarIndex) + 1}-${Math.round(intent.toBarIndex) + 1}`,
+        `Rotate ${track.name} bar assignments ${Math.round(intent.fromBarIndex) + 1}-${Math.round(intent.toBarIndex) + 1}`,
       actions: [
         {
           type: "rotate_track_bar_assignments",

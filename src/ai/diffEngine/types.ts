@@ -81,6 +81,14 @@ export type DiffPlanAction =
       explanation?: string;
     }
   | {
+      type: "rotate_drum_bar_steps";
+      trackId: string;
+      barIndex: number;
+      steps: number;
+      label?: string;
+      explanation?: string;
+    }
+  | {
       type: "transpose_track_bar_notes";
       trackId: string;
       barIndex: number;

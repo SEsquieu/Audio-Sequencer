@@ -144,6 +144,7 @@ const DEFAULT_SUPPORTED_COMMANDS = [
   "add dj filter to <track>",
   "add saturator to <track>",
   "add eq3 to <track>",
+  "rotate drum steps by <steps> [in bar <n>]",
 ];
 
 const formatSupportedCommandList = (context?: AiPromptContext) => {

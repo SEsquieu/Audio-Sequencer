@@ -1774,6 +1774,9 @@ function App() {
   }, [openAiApiKeyDraft, anthropicApiKeyDraft]);
 
   useEffect(() => {
+    if (!isAiOpen) {
+      return;
+    }
     let cancelled = false;
     const run = async () => {
       const providers = listAiProviderDescriptors();
