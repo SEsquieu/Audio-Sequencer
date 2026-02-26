@@ -186,6 +186,8 @@ Examples:
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"transpose lead up 2 in bar 3","confidence":0.76}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"set second note c4 to d4 step 1 on lead","confidence":0.74}]}
 {"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"set note 2 at step 1 to d4 on lead","confidence":0.72}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note c4 step 3 on lead in bar 3","confidence":0.77}]}
+{"schema":"audio-sequencer.diff-intent.v1","intents":[{"type":"canonical_command","command":"add note g3 step 7 on bass in bar 4","confidence":0.75}]}
 
 Context:
 ${JSON.stringify(

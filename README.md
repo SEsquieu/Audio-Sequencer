@@ -21,6 +21,7 @@ The app is designed around a canonical JSON song state and a deterministic-ish W
 - Local-first AI patch proposal pipeline using a diff engine that compiles validated patch candidates
 - Deterministic rule parser for fast commands (tempo, swing, gain, send levels, bus routing, track/bar edits)
 - Deterministic note-edit commands for synth patterns (add/remove/retune notes by step/bar)
+- Note-edit parser accepts broader natural phrasing (e.g. bar/track order variants) to reduce AI near-miss fallthrough
 - Smart patch heuristic fallback for broader local edits
 - Provider routing with fallback diagnostics for:
   - Local rule parser

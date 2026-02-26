@@ -305,6 +305,11 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
   }
 
   if (track) {
+    const noteCommandText = text
+      .replace(/\s+(?:in\s+)?bar\s+(\d{1,3})\s+(on|to)\s+(.+)$/i, " $2 $3 in bar $1")
+      .replace(/\s+(on|to)\s+(.+?)\s+(?:in\s+)?bar\s+(\d{1,3})\s+(len(?:gth)?\s+\d{1,2})$/i, " $1 $2 in bar $3 $4")
+      .replace(/\s+(on|to)\s+(.+?)\s+(?:in\s+)?bar\s+(\d{1,3})\s+(vel(?:ocity)?\s+[\d.]+%?)$/i, " $1 $2 in bar $3 $4");
+
     match = text.match(/^(copy|duplicate)\s+.+?\s+bar\s+(\d{1,3})\s+(?:to|into)\s+bar\s+(\d{1,3})$/);
     if (!match) {
       match = text.match(/^(copy|duplicate)\s+bar\s+(\d{1,3})\s+(?:to|into)\s+bar\s+(\d{1,3})\s+(?:on\s+)?(.+)$/);
@@ -551,13 +556,13 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
       }
     }
 
-    match = text.match(
-      /^(?:set|move)\s+(?:(first|second|third|fourth|\d+(?:st|nd|rd|th))\s+)?note\s+([a-g][#b]?-?\d|\d{1,3})\s+to\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+    match = noteCommandText.match(
+      /^(?:set|move)\s+(?:(first|second|third|fourth|\d+(?:st|nd|rd|th))\s+)?note\s+([a-g][#b]?-?\d|\d{1,3})\s+to\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:(?:at|to)\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:(?:in|on)\s+)?bar\s+(\d{1,3}))?$/
     );
     let retuneByIndexMatch: RegExpMatchArray | null = null;
     if (!match) {
-      retuneByIndexMatch = text.match(
-        /^(?:set|move)\s+note\s+(\d{1,2})\s+(?:at\s+)?step\s+(\d{1,2})\s+to\s+([a-g][#b]?-?\d|\d{1,3})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      retuneByIndexMatch = noteCommandText.match(
+        /^(?:set|move)\s+note\s+(\d{1,2})\s+(?:(?:at|to)\s+)?step\s+(\d{1,2})\s+to\s+([a-g][#b]?-?\d|\d{1,3})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:(?:in|on)\s+)?bar\s+(\d{1,3}))?$/
       );
     }
     if (match && track.type === "synth") {
@@ -631,13 +636,13 @@ export const parseRuleBasedDiffCandidates = (request: DiffEngineRequest): DiffPl
       }
     }
 
-    match = text.match(
-      /^(add|remove|delete)\s+(?:(first|second|third|fourth|\d+(?:st|nd|rd|th))\s+)?note\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?(?:\s+len(?:gth)?\s+(\d{1,2}))?(?:\s+vel(?:ocity)?\s+([\d.]+%?))?$/
+    match = noteCommandText.match(
+      /^(add|remove|delete)\s+(?:(first|second|third|fourth|\d+(?:st|nd|rd|th))\s+)?note\s+([a-g][#b]?-?\d|\d{1,3})\s+(?:(?:at|to)\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:(?:in|on)\s+)?bar\s+(\d{1,3}))?(?:\s+len(?:gth)?\s+(\d{1,2}))?(?:\s+vel(?:ocity)?\s+([\d.]+%?))?$/
     );
     let removeByIndexMatch: RegExpMatchArray | null = null;
     if (!match) {
-      removeByIndexMatch = text.match(
-        /^(remove|delete)\s+note\s+(\d{1,2})\s+(?:at\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:in|on)\s+bar\s+(\d{1,3}))?$/
+      removeByIndexMatch = noteCommandText.match(
+        /^(remove|delete)\s+note\s+(\d{1,2})\s+(?:(?:at|to)\s+)?step\s+(\d{1,2})(?:\s+(?:on|to)\s+.+?)?(?:\s+(?:(?:in|on)\s+)?bar\s+(\d{1,3}))?$/
       );
     }
     if (match && track.type === "synth") {

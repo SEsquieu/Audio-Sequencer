@@ -26,6 +26,7 @@ Current emphasis:
 
 - broaden parser/provider command coverage (especially track/bar controls)
 - improve provider prompt grounding and canonical-command alignment
+- tighten note-edit translation reliability (parser phrasing variants + provider examples)
 - continue UX polish for Smart Patch/provider settings and diagnostics
 
 ## Execution Discipline (Cross-Workstation Safety)
