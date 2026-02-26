@@ -3,6 +3,7 @@ import { promptToIntents } from "../../smartPatch/router";
 import { buildAiPromptContext } from "../context/songSnapshot";
 import { createAiIntentProvider } from "../providers/registry";
 import { routeAiProvider } from "../providers/router";
+import { AiProviderId } from "../providers/types";
 import { compileDiffPlanCandidate } from "./compiler";
 import { compileProviderIntentsToPlans } from "./providerIntents";
 import { rankAndDedupeCandidates } from "./ranker";
@@ -92,6 +93,9 @@ const withTimeoutSignal = (signal: AbortSignal | undefined, timeoutMs: number | 
   };
 };
 
+const isStructuredIntentProvider = (providerId: AiProviderId) =>
+  providerId === "ollama-local" || providerId === "user-api-openai" || providerId === "user-api-anthropic";
+
 export const proposeDiffPatchCandidates = (request: DiffEngineRequest) => {
   const route = routeAiProvider({
     prompt: request.prompt,
@@ -157,14 +161,10 @@ export const proposeDiffPatchCandidatesAsyncDetailed = async (request: DiffEngin
     };
   };
 
-  if (
-    route.selectedProviderId === "ollama-local" ||
-    route.selectedProviderId === "user-api-openai" ||
-    route.selectedProviderId === "user-api-anthropic"
-  ) {
+  const tryStructuredProvider = async (providerId: AiProviderId): Promise<DiffEngineResult | null> => {
     const { signal, cleanup } = withTimeoutSignal(request.signal, request.timeoutMs ?? 10000);
     try {
-      const provider = createAiIntentProvider(route.selectedProviderId);
+      const provider = createAiIntentProvider(providerId);
       if (provider?.generateStructuredIntents) {
         const envelope = await provider.generateStructuredIntents({
           prompt: request.prompt,
@@ -196,6 +196,32 @@ export const proposeDiffPatchCandidatesAsyncDetailed = async (request: DiffEngin
       return fallbackToLocal(error instanceof Error ? error.message : "Provider request failed");
     } finally {
       cleanup();
+    }
+  };
+
+  if (isStructuredIntentProvider(route.selectedProviderId)) {
+    const result = await tryStructuredProvider(route.selectedProviderId);
+    if (result) {
+      return result;
+    }
+  }
+
+  if (route.selectedProviderId === "ruleParser-local" && rulePlans.length === 0) {
+    const escalationProvider = route.fallbackProviderIds.find((providerId) => isStructuredIntentProvider(providerId));
+    if (escalationProvider) {
+      diagnostics.usedFallback = true;
+      diagnostics.fallbackReason = `Rule parser found no exact match; escalating to ${escalationProvider}`;
+      const result = await tryStructuredProvider(escalationProvider);
+      if (result) {
+        return {
+          ...result,
+          diagnostics: {
+            ...result.diagnostics,
+            usedFallback: true,
+            fallbackReason: result.diagnostics.fallbackReason ?? diagnostics.fallbackReason,
+          },
+        };
+      }
     }
   }
 
