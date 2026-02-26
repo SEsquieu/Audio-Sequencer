@@ -28,6 +28,7 @@ Current emphasis:
 - prioritize provider UX trust (status, timeouts, fallback clarity) over new command vocabulary
 - finish Phase F request lifecycle polish (cancelation/superseded clarity, retry affordances, stale-state edge cases)
 - keep provider probes scoped/lazy (selected-provider-first) to reduce surprise network/permission prompts
+- prepare Phase F completion call after final cross-device/mobile validation
 
 ## Execution Discipline (Cross-Workstation Safety)
 
@@ -84,6 +85,7 @@ To reduce ambiguity during fast iteration (especially across multiple workstatio
 - Phase E typed action expansion for note/pattern/arrangement edits (broad coverage checkpoint)
 - Drum groove parser macros + typed batched drum-step provider path (`set_drum_steps` -> `set_drum_step_batch`)
 - Phase F provider UX hardening (selected-provider-first probes, save-triggered reprobes, clearer fallback/status diagnostics, retry affordances)
+- Phase F request lifecycle UX polish (canceling state, stale proposal read-only mode, duplicate-submit guard)
 
 ## Active Focus (Near-Term)
 
@@ -94,6 +96,7 @@ Priority: `High`
 - Keep current Phase E command coverage stable while shifting effort to provider UX reliability
 - Continue request lifecycle hardening (cancel/superseded clarity, stale-response edge cases, retry affordances)
 - Preserve trust signals in Smart Patch (status semantics, fallback clarity, actionable empty states)
+- Validate near-complete Phase F behavior on mobile / cross-workstation handoff flows before closure
 
 ### 2. Provider UX Reliability / Feedback
 
@@ -106,6 +109,7 @@ Priority: `Medium`
 - Revisit provider probe strategy to avoid surprise permission/network prompts (lazy + selected-provider-first checks)
 - Clarify timeout vs parse-failure vs fallback messaging in Smart Patch diagnostics/UI
 - Keep provider status semantics consistent (`Not checked` / `Checking…` / `Ready` / `Issue` / `Unavailable`)
+- Confirm prompt scope override feedback + guardrails-off defaults feel acceptable for tester builds
 
 ### 3. Documentation / Context Resilience
 
@@ -229,6 +233,7 @@ Priority: `Medium`
 - Tighten remaining provider status refresh edge cases after settings changes
 - Validate selected-provider-first probe strategy and save-triggered reprobes across providers/devices
 - Clarify timeout/fallback diagnostics messaging and UI labels (in progress; continue polish)
+- Phase F completion checkpoint: validate mobile/provider flows and mark roadmap status when ready
 
 ## P2 (Important, but can follow current phase)
 
