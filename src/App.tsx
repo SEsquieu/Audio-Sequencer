@@ -4553,6 +4553,11 @@ function App() {
               <span>Running inference…</span>
             </div>
           )}
+          {isAiGenerating && filteredCandidates.length > 0 && (
+            <div className="ai-stale-candidates-note">
+              Previous proposals are temporarily read-only while a new request is running.
+            </div>
+          )}
           {aiDiagnostics && (
             <div className="ai-debug-state">
               <strong>{aiDiagnostics.selectedProviderId}</strong>
@@ -4642,7 +4647,7 @@ function App() {
             const affectedPaths = Array.from(new Set(candidate.ops.map((op) => op.path))).slice(0, 4);
             const touchedTracks = getPatchedTrackIndices(candidate);
             return (
-              <article key={candidate.id} className="candidate-card">
+              <article key={candidate.id} className={isAiGenerating ? "candidate-card is-stale" : "candidate-card"}>
                 <div className="candidate-head">
                   <h3>{candidate.label}</h3>
                   <span className="candidate-tag">Option {idx + 1}</span>
@@ -4660,13 +4665,13 @@ function App() {
                   </div>
                 )}
                 <div className="candidate-actions">
-                  <button type="button" onClick={() => auditionToggle(candidate)}>
+                  <button type="button" onClick={() => auditionToggle(candidate)} disabled={isAiGenerating}>
                     {auditionPatchId === candidate.id ? "Stop" : "Audition"}
                   </button>
-                  <button type="button" className="candidate-accept" onClick={() => acceptCandidate(candidate)}>
+                  <button type="button" className="candidate-accept" onClick={() => acceptCandidate(candidate)} disabled={isAiGenerating}>
                     Accept
                   </button>
-                  <button type="button" className="candidate-reject" onClick={() => rejectCandidate(candidate.id)}>
+                  <button type="button" className="candidate-reject" onClick={() => rejectCandidate(candidate.id)} disabled={isAiGenerating}>
                     Reject
                   </button>
                 </div>

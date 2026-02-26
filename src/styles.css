@@ -2884,11 +2884,24 @@ input[type="range"] {
   margin-top: 0.55rem;
 }
 
+.ai-stale-candidates-note {
+  border: 1px dashed #3a4a42;
+  border-radius: 0.45rem;
+  background: #060b08;
+  color: #b9c9c0;
+  font-size: 0.72rem;
+  padding: 0.38rem 0.5rem;
+}
+
 .candidate-card {
   background: #0a1510;
   border: 1px solid #1f3b2c;
   border-radius: 0.6rem;
   padding: 0.65rem;
+}
+
+.candidate-card.is-stale {
+  opacity: 0.78;
 }
 
 .candidate-head {
@@ -2961,6 +2974,11 @@ input[type="range"] {
   border-radius: 0.45rem;
   min-height: 1.82rem;
   padding: 0.2rem 0.35rem;
+}
+
+.candidate-actions button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .candidate-actions .candidate-accept {
