@@ -614,6 +614,7 @@ function App() {
   const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState("");
   const [candidates, setCandidates] = useState<PatchMeta[]>([]);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
+  const [isAiCanceling, setIsAiCanceling] = useState(false);
   const [aiProviderPreference, setAiProviderPreferenceState] = useState<string | "auto">(() => getStoredAiProviderPreference());
   const [aiDiagnostics, setAiDiagnostics] = useState<DiffEngineDiagnostics | null>(null);
   const [aiSelectedTrackOnly, setAiSelectedTrackOnly] = useState(false);
@@ -1816,6 +1817,7 @@ function App() {
     aiCancelReasonRef.current = null;
     aiAbortControllerRef.current = abortController;
     setIsAiGenerating(true);
+    setIsAiCanceling(false);
     setAiDiagnostics(null);
     try {
       const result = await aiProposePatchDetailedAsync(
@@ -1876,6 +1878,7 @@ function App() {
         aiAbortControllerRef.current = null;
       }
       if (requestSeq === aiRequestSeqRef.current) {
+        setIsAiCanceling(false);
         setIsAiGenerating(false);
       }
     }
@@ -1981,10 +1984,13 @@ function App() {
   }, [isAiOpen, aiProviderPreference, hasOpenAiApiKey, hasAnthropicApiKey]);
 
   const cancelAiGeneration = () => {
+    if (!aiAbortControllerRef.current) {
+      return;
+    }
     aiCancelReasonRef.current = "user";
+    setIsAiCanceling(true);
     aiAbortControllerRef.current?.abort();
     aiAbortControllerRef.current = null;
-    setIsAiGenerating(false);
   };
 
   const onAiProviderPreferenceChange = (value: string) => {
@@ -4550,7 +4556,7 @@ function App() {
           {isAiGenerating && (
             <div className="ai-loading-state" role="status" aria-live="polite">
               <span className="ai-loading-spinner" aria-hidden="true" />
-              <span>Running inference…</span>
+              <span>{isAiCanceling ? "Canceling…" : "Running inference…"}</span>
             </div>
           )}
           {isAiGenerating && filteredCandidates.length > 0 && (
@@ -4699,8 +4705,8 @@ function App() {
               {isAiGenerating ? "Generating..." : "Generate"}
             </button>
             {isAiGenerating && (
-              <button type="button" onClick={cancelAiGeneration}>
-                Cancel
+              <button type="button" onClick={cancelAiGeneration} disabled={isAiCanceling}>
+                {isAiCanceling ? "Canceling…" : "Cancel"}
               </button>
             )}
             <button type="button" onClick={() => setPrompt("")}>
