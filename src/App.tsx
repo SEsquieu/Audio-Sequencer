@@ -529,6 +529,7 @@ function App() {
     running: boolean;
   } | null>(null);
   const [prompt, setPrompt] = useState("");
+  const [lastSubmittedPrompt, setLastSubmittedPrompt] = useState("");
   const [candidates, setCandidates] = useState<PatchMeta[]>([]);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [aiProviderPreference, setAiProviderPreferenceState] = useState<string | "auto">(() => getStoredAiProviderPreference());
@@ -1709,6 +1710,7 @@ function App() {
   };
 
   const generateCandidates = async (text: string) => {
+    setLastSubmittedPrompt(text);
     const requestSeq = ++aiRequestSeqRef.current;
     aiAbortControllerRef.current?.abort();
     const abortController = new AbortController();
@@ -1973,6 +1975,7 @@ function App() {
 
   const aiFallbackState = aiDiagnostics?.usedFallback ? classifyAiFallbackReason(aiDiagnostics.fallbackReason) : null;
   const aiProviderRouteStatusLabel = isAiGenerating ? "Running" : aiDiagnostics?.usedFallback ? "Fallback" : aiDiagnostics ? "Completed" : "Idle";
+  const canRetryAiPrompt = !isAiGenerating && !!lastSubmittedPrompt.trim() && (filteredCandidates.length === 0 || !!aiDiagnostics?.usedFallback);
   const aiNoProposalMessage =
     candidates.length > 0
       ? "No proposals match the current AI filters. Toggle Selected Track Only or Live-Safe While Playing."
@@ -4434,6 +4437,13 @@ function App() {
                   Fallback: {aiFallbackState?.label ?? "Used local fallback"}
                 </span>
               )}
+              {canRetryAiPrompt && (
+                <div className="ai-inline-actions">
+                  <button type="button" onClick={() => void generateCandidates(lastSubmittedPrompt)}>
+                    Retry
+                  </button>
+                </div>
+              )}
             </div>
           )}
           {import.meta.env.DEV && aiDiagnostics && (
@@ -4476,6 +4486,13 @@ function App() {
           {filteredCandidates.length === 0 && !isAiGenerating && (
             <div className="ai-empty-state">
               {aiNoProposalMessage}
+              {canRetryAiPrompt && (
+                <div className="ai-inline-actions">
+                  <button type="button" onClick={() => void generateCandidates(lastSubmittedPrompt)}>
+                    Retry Last Prompt
+                  </button>
+                </div>
+              )}
             </div>
           )}
           {filteredCandidates.map((candidate, idx) => {

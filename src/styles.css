@@ -2728,6 +2728,21 @@ input[type="range"] {
   letter-spacing: 0.02em;
 }
 
+.ai-inline-actions {
+  display: flex;
+  gap: 0.35rem;
+  margin-top: 0.2rem;
+}
+
+.ai-inline-actions button {
+  border: 1px solid #2e5a42;
+  background: #0a1510;
+  color: #e7fff0;
+  border-radius: 0.4rem;
+  padding: 0.25rem 0.45rem;
+  font-size: 0.7rem;
+}
+
 .ai-trace-panel {
   border: 1px solid #1f3b2c;
   border-radius: 0.45rem;
@@ -2803,6 +2818,11 @@ input[type="range"] {
   font-size: 0.82rem;
   padding: 0.65rem;
   text-align: center;
+}
+
+.ai-empty-state .ai-inline-actions {
+  justify-content: center;
+  margin-top: 0.55rem;
 }
 
 .candidate-card {
