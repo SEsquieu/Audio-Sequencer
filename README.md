@@ -2,6 +2,12 @@
 
 A browser-based sequencer built with Vite + React + TypeScript.
 
+**Live application:** [music.grinningfrog.com](https://music.grinningfrog.com/)
+
+## Project Status
+
+This is an active personal instrument, not an archived demo. I use it for beat creation and continue to evolve it as the workflow exposes new ideas and rough edges. The public repository tracks the same application deployed at the live URL above.
+
 The app is designed around a canonical JSON song state and a deterministic-ish WebAudio engine. It supports pattern-based composition, synth/drum editing, live transport control, undo/redo via JSON patch history, insert/master FX, and AI-assisted patch proposals through a local-first diff engine.
 
 ## What The App Does
@@ -81,6 +87,8 @@ npm run build
 
 ## AI Provider Setup (Optional)
 
+AI features are optional; sequencing, playback, editing, and local patch generation work without a cloud provider.
+
 - `Ollama`:
   - Run Ollama locally and ensure the API is reachable (default: `http://127.0.0.1:11434`)
   - Select `Ollama (Local)` in the AI panel
@@ -90,6 +98,15 @@ npm run build
   - Enter your API key in AI Provider Settings
   - Keys are stored locally in browser storage on your machine (no backend in this repo)
   - Optionally set a model override
+
+## Privacy and API Keys
+
+- Songs and provider settings remain in the browser; this repository has no application backend.
+- OpenAI and Anthropic keys are stored in browser storage and sent directly to the selected provider.
+- Do not enter a valuable unrestricted key on a shared or untrusted device. Prefer a scoped, revocable key and clear site data when finished.
+- Ollama requests stay between the browser and the locally configured Ollama endpoint.
+
+See [SECURITY.md](./SECURITY.md) for the supported security model and reporting guidance.
 
 ## Deployment
 
