@@ -1,0 +1,91 @@
+name: Temporary public release audit
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  public-release-audit:
+    name: Full history, dependencies, and verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out complete repository history
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+
+      - name: Fetch every branch and tag
+        shell: bash
+        run: |
+          git fetch --prune origin '+refs/heads/*:refs/remotes/origin/*'
+          git fetch --force --tags origin '+refs/tags/*:refs/tags/*'
+
+      - name: Install verified Gitleaks release
+        shell: bash
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+        run: |
+          set -euo pipefail
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          base="https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}"
+          curl --fail --silent --show-error --location --remote-name "${base}/${archive}"
+          curl --fail --silent --show-error --location --remote-name "${base}/gitleaks_${GITLEAKS_VERSION}_checksums.txt"
+          grep "  ${archive}$" "gitleaks_${GITLEAKS_VERSION}_checksums.txt" | sha256sum --check -
+          tar -xzf "${archive}" gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan all reachable Git history for secrets
+        shell: bash
+        run: gitleaks git . --log-opts="--all" --redact --exit-code 1
+
+      - name: Reject sensitive tracked filenames, including history
+        shell: bash
+        run: |
+          set -euo pipefail
+          pattern='(^|/)(\.env($|\.)|id_(rsa|dsa|ecdsa|ed25519)($|\.)|credentials\.json$|secrets?\.json$|[^/]+\.(pem|key|p12|pfx)$)'
+          current="$(git ls-files | grep -E "$pattern" | grep -Ev '(^|/)\.env\.(example|sample|template)$' || true)"
+          historical="$(git log --all --name-only --pretty=format: | sed '/^$/d' | sort -u | grep -E "$pattern" | grep -Ev '(^|/)\.env\.(example|sample|template)$' || true)"
+          if [[ -n "$current" || -n "$historical" ]]; then
+            echo "Sensitive-looking tracked paths found."
+            [[ -z "$current" ]] || { echo "Currently tracked:"; printf '%s\n' "$current"; }
+            [[ -z "$historical" ]] || { echo "Present in history:"; printf '%s\n' "$historical"; }
+            exit 1
+          fi
+
+      - name: Install dependencies from lockfile
+        run: npm ci
+
+      - name: Reject restrictive dependency licenses
+        shell: bash
+        run: |
+          node <<'NODE'
+          const lock = require('./package-lock.json');
+          const blocked = /(^|[^A-Z])(AGPL|GPL|SSPL|BUSL|COMMONS[ -]CLAUSE)([^A-Z]|$)/i;
+          const failures = [];
+          for (const [path, pkg] of Object.entries(lock.packages || {})) {
+            if (!path || !pkg || !pkg.license) continue;
+            const licenses = Array.isArray(pkg.license) ? pkg.license.join(' OR ') : String(pkg.license);
+            if (blocked.test(licenses)) failures.push({ path, licenses });
+          }
+          if (failures.length) {
+            console.error('Restrictive dependency licenses found:', failures);
+            process.exit(1);
+          }
+          console.log('No GPL/AGPL/SSPL/BUSL/Commons-Clause dependency licenses found.');
+          NODE
+
+      - name: Audit high-severity dependency vulnerabilities
+        run: npm audit --audit-level=high
+
+      - name: Run repository build and tests
+        shell: bash
+        run: |
+          npm run build --if-present
+          npm test --if-present
