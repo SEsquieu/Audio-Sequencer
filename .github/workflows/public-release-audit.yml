@@ -8,7 +8,7 @@ permissions:
   contents: write
 
 jobs:
-  repair-lockfile:
+  repair-toolchain:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -18,8 +18,8 @@ jobs:
           ref: agent/public-release-prep
           fetch-depth: 0
 
-      - name: Apply non-breaking audit fixes
-        run: npm audit fix
+      - name: Upgrade vulnerable build toolchain
+        run: npm install --save-dev vite@8.2.1 @vitejs/plugin-react@latest
 
       - name: Verify high-severity findings are cleared
         run: npm audit --audit-level=high
@@ -27,20 +27,22 @@ jobs:
       - name: Build the application
         run: npm run build
 
-      - name: Commit verified lockfile repair
+      - name: Commit verified toolchain repair
         shell: bash
         run: |
           set -euo pipefail
-          git diff --exit-code -- package.json || {
-            echo "npm audit fix unexpectedly changed package.json; refusing automated commit."
+          unexpected="$(git status --porcelain | grep -Ev '^ M (package.json|package-lock.json)$' || true)"
+          if [[ -n "$unexpected" ]]; then
+            echo "Unexpected files changed; refusing automated commit:"
+            printf '%s\n' "$unexpected"
             exit 1
-          }
-          if git diff --quiet -- package-lock.json; then
-            echo "No lockfile changes were needed."
+          fi
+          if git diff --quiet -- package.json package-lock.json; then
+            echo "No dependency changes were needed."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add package-lock.json
-          git commit -m "chore: repair audited development dependencies"
+          git add package.json package-lock.json
+          git commit -m "chore: upgrade audited build toolchain"
           git push origin HEAD:agent/public-release-prep
