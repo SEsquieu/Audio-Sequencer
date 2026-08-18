@@ -1,5 +1,5 @@
 {
-  "name": "beepbox-strudel-ai-patch-mvp",
+  "name": "grinning-frog-sequencer",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -18,5 +18,12 @@
     "@vitejs/plugin-react": "^4.3.1",
     "typescript": "^5.6.2",
     "vite": "^5.4.8"
+  },
+  "description": "A browser-based sequencer with deterministic WebAudio playback and local-first AI-assisted editing.",
+  "license": "MIT",
+  "homepage": "https://music.grinningfrog.com/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SEsquieu/Audio-Sequencer.git"
   }
 }
