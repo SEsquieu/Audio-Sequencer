@@ -76,3 +76,31 @@ test('all workspaces fit viewport without page overflow or console crashes',asyn
  }
  expect(errors).toEqual([]);
 });
+
+test('portrait editor fits the whole bar and enlarged view has an independent touch scroll control',async({page},testInfo)=>{
+ test.skip(testInfo.project.name!=='android','Portrait touch regression');
+ for(const width of [320,393,412]) {
+  await page.setViewportSize({width,height:851});
+  for(const track of ['0','2']) {
+   await page.getByLabel('Selected track',{exact:true}).selectOption(track);
+   await page.getByRole('button',{name:'Full bar',exact:true}).click();
+   const first=page.getByRole('button',{name:track==='0'?'C4, step 1':'kick, step 1',exact:true});
+   const last=page.getByRole('button',{name:track==='0'?'C4, step 16':'kick, step 16',exact:true});
+   const bounds=await last.boundingBox();expect(bounds).not.toBeNull();
+   expect(bounds!.x).toBeGreaterThanOrEqual(0);expect(bounds!.x+bounds!.width).toBeLessThanOrEqual(width);
+   await last.tap();await expect(last).toHaveAttribute('aria-pressed','true');
+   await page.getByRole('button',{name:'Larger steps',exact:true}).click();
+   const rail=page.getByRole('slider',{name:'Scroll pattern horizontally'});
+   // A real tap on the separate rail must scroll without painting notes.
+   const box=await rail.boundingBox();expect(box).not.toBeNull();
+   await page.touchscreen.tap(box!.x+box!.width-3,box!.y+box!.height/2);
+   await page.getByRole('button',{name:'Show last steps'}).tap();
+   const end=await last.boundingBox();expect(end!.x+end!.width).toBeLessThanOrEqual(width);
+   await expect(last).toHaveAttribute('aria-pressed','true');
+   await page.getByRole('button',{name:'Show first steps'}).tap();
+   const start=await first.boundingBox();expect(start!.x).toBeGreaterThanOrEqual(0);
+   // Reset edited test note before the next viewport size.
+   await page.getByRole('button',{name:'Full bar',exact:true}).click();await last.tap();
+  }
+ }
+});

@@ -58,3 +58,9 @@ Latest completed checkpoint:
 8. CI workflow wiring and provider integration tests with mocked external boundaries remain to be added. External paid/local-model providers were not exercised; their implementation is unchanged.
 
 Resume by reading PRODUCT_OVERHAUL.md and this file, checking branch/PR head, installing from lockfile, running the above checks, then addressing the release gates. Keep PR #2 draft until release gates are met; do not merge or deploy production without authorization.
+
+## Portrait editor follow-up — 2026-10-30
+
+Fixed the portrait editor showing only half a bar while note gestures prevented swipe scrolling. Full bar now fits all 16 steps by default for both synth and drum tracks. The optional Larger steps view has a separate native horizontal scroll slider and first/last-step buttons, so navigation never requires dragging across note cells. Scroll feedback is synchronized with viewport movement. Desktop editing remains unchanged.
+
+Validation: 35 unit tests and production build passed; 15 browser tests passed, with the portrait-only case skipped in the desktop project. The new touch regression checks both track types at 320, 393 and 412px, verifies step 16 is within the visible width before tapping, and exercises the enlarged-view navigation controls without altering existing notes. Physical-device verification remains pending.

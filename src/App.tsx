@@ -487,6 +487,19 @@ function App() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [workspace, setWorkspace] = useState<Workspace>("compose");
+  const [enlargedEditor, setEnlargedEditor] = useState(false);
+  const [editorScrollPercent, setEditorScrollPercent] = useState(0);
+  const compositionRef = useRef<HTMLElement | null>(null);
+  const scrollEditor = (percent: number) => {
+    setEditorScrollPercent(percent);
+    compositionRef.current?.querySelectorAll<HTMLElement>(".octave-grid-viewport,.pattern-editor-stage").forEach(el => {
+      el.scrollLeft = (el.scrollWidth - el.clientWidth) * percent / 100;
+    });
+  };
+  const onEditorScroll = (event: React.UIEvent<HTMLElement>) => {
+    const el = event.currentTarget;
+    if (el.scrollWidth > el.clientWidth) setEditorScrollPercent(el.scrollLeft / (el.scrollWidth - el.clientWidth) * 100);
+  };
   const [expressionStep, setExpressionStep] = useState(0);
   const [soloId, setSoloId] = useState<string | null>(null);
   const [selectedTrack, setSelectedTrack] = useState(0);
@@ -3201,6 +3214,7 @@ function App() {
     <div
       className="app-shell"
       data-workspace={workspace}
+      data-editor-size={enlargedEditor ? "large" : "full"}
       onPointerDownCapture={() => {
         void getOrCreateEngine().ensureContext();
       }}
@@ -3361,12 +3375,22 @@ function App() {
       <main className="panel" id="workspace-main">
         {workspace === "mix" && <ChannelMixer song={song} muted={mutedTrackIds} onMute={toggleTrackMute} soloId={soloId} onSolo={id => setSoloId(v => v === id ? null : id)} commit={createAndCommit} readLevels={readLevels} master={masterVolume} onMaster={setMasterVolume} onSound={index => {setSelectedTrack(index);setWorkspace("sound");}}/>}
         <div className="workspace">
-          <section className="main-view" aria-label="Composition">
+          <section ref={compositionRef} className="main-view" aria-label="Composition">
             {track && <PatternTools track={track} trackIndex={safeTrackIndex} patternId={patternId} bar={selectedBar} step={expressionStep} onStep={setExpressionStep} commit={createAndCommit}/>}
-            <div className="mobile-step-banks" aria-label="Visible steps"><span>Step view</span>{[0,1].map(bank=><button key={bank} onClick={()=>{document.querySelectorAll<HTMLElement>(".octave-grid-viewport,.pattern-editor-stage").forEach(el=>el.scrollTo({left:bank===0?0:el.scrollWidth-el.clientWidth,behavior:"smooth"}));}}> {bank===0?"1–8":"9–16"} </button>)}</div>
+            <div className="mobile-editor-controls" aria-label="Editor view">
+              <div className="mobile-step-banks">
+                <button aria-pressed={!enlargedEditor} onClick={() => {setEnlargedEditor(false); scrollEditor(0);}}>Full bar</button>
+                <button aria-pressed={enlargedEditor} onClick={() => setEnlargedEditor(true)}>Larger steps</button>
+              </div>
+              {enlargedEditor && <div className="editor-scroll-controls">
+                <button onClick={() => scrollEditor(0)} aria-label="Show first steps">1–8</button>
+                <label>Scroll bar<input aria-label="Scroll pattern horizontally" type="range" min={0} max={100} step={1} value={editorScrollPercent} onChange={e => scrollEditor(Number(e.target.value))}/></label>
+                <button onClick={() => scrollEditor(100)} aria-label="Show last steps">9–16</button>
+              </div>}
+            </div>
             <div className="beat-ruler" aria-hidden="true"><span>BEAT</span>{Array.from({length:16},(_,i)=><span key={i}>{i%4===0?i/4+1:"·"}</span>)}</div>
             {track && (
-              <section className="pattern-editor-stage">
+              <section className="pattern-editor-stage" onScroll={onEditorScroll}>
                 {track.type === "synth" && (
                   <div className="octave-shell">
                     <div className="octave-editor-shell">
@@ -3377,6 +3401,7 @@ function App() {
                           octaveTransition?.direction === 1 ? "dir-up" : "dir-down",
                           octaveTransition?.running ? "running" : "",
                         ].join(" ")}
+                        onScroll={onEditorScroll}
                         style={{
                           ...editorSweepStyle,
                           "--octave-scrub-offset": `${octaveScrubOffsetPx}px`,
