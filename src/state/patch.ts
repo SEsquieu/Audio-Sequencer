@@ -54,7 +54,7 @@ export const applyPatch = <T>(state: T, ops: JsonPatchOp[]): T => {
 
     if (Array.isArray(parent)) {
       const index = key === "-" ? parent.length : Number(key);
-      if (Number.isNaN(index)) {
+      if (!Number.isInteger(index) || index < 0 || (op.op === "add" ? index > parent.length : index >= parent.length)) {
         throw new Error(`Invalid array index: ${key}`);
       }
 
@@ -62,18 +62,29 @@ export const applyPatch = <T>(state: T, ops: JsonPatchOp[]): T => {
         parent.splice(index, 0, clone(op.value));
       } else if (op.op === "remove") {
         parent.splice(index, 1);
-      } else {
+      } else if (op.op === "replace") {
         parent[index] = clone(op.value);
+      } else {
+        throw new Error(`Unsupported patch operation: ${String(op.op)}`);
       }
       continue;
     }
 
+    if (parent === null || typeof parent !== "object") {
+      throw new Error(`Invalid patch parent: ${op.path}`);
+    }
+    if (op.op === "remove" || op.op === "replace") {
+      if (!Object.prototype.hasOwnProperty.call(parent, key)) {
+        throw new Error(`Patch target not found: ${op.path}`);
+      }
+    }
     if (op.op === "remove") {
       delete parent[key];
-      continue;
+    } else if (op.op === "add" || op.op === "replace") {
+      parent[key] = clone(op.value);
+    } else {
+      throw new Error(`Unsupported patch operation: ${String(op.op)}`);
     }
-
-    parent[key] = clone(op.value);
   }
 
   return next;
