@@ -1,0 +1,7 @@
+import type { Track } from '../../types/song';
+export type Workspace = 'compose' | 'arrange' | 'sound' | 'mix';
+export function WorkstationNav({workspace,onChange,tracks,selectedTrack,onTrackChange,bar,onBarChange,bars}: {
+ workspace: Workspace; onChange: (v:Workspace)=>void; tracks:Track[]; selectedTrack:number; onTrackChange:(v:number)=>void; bar:number; onBarChange:(v:number)=>void; bars:number;
+}) {
+ return <><nav className="workstation-nav" aria-label="Workspace">{(['compose','arrange','sound','mix'] as const).map((id,i)=><button key={id} aria-current={workspace===id?'page':undefined} onClick={()=>onChange(id)}><span aria-hidden="true">{['▦','▤','◉','≋'][i]}</span> {id[0].toUpperCase()+id.slice(1)}</button>)}</nav><div className="workspace-context"><label>Track <select aria-label="Selected track" value={selectedTrack} onChange={e=>onTrackChange(Number(e.target.value))}>{tracks.map((t,i)=><option key={t.id} value={i}>{t.name} · {t.type}</option>)}</select></label><label>Bar <select aria-label="Selected bar" value={bar} onChange={e=>onBarChange(Number(e.target.value))}>{Array.from({length:bars},(_,i)=><option key={i} value={i}>{i+1}</option>)}</select></label><span className="workspace-hint">{workspace==='compose'?'Tap to write · drag to extend':workspace==='arrange'?'Select a clip · hold or right-click for actions':workspace==='sound'?'Shape your sound · audition any time':'Balance tracks · route effects'}</span></div></>;
+}

@@ -19,25 +19,22 @@ import { getStoredAiProviderPreference, setStoredAiProviderPreference } from "./
 import type { AiProviderDescriptor, AiProviderId } from "./ai/providers/types";
 import type { DiffEngineDiagnostics } from "./ai/diffEngine/types";
 import { AudioEngine, getEffectiveLoopBars } from "./audio/engine";
-import { FxType, createFxInstance, FxInstance } from "./audio/fx/types";
-import { AdsrEnvelopeEditor } from "./components/AdsrEnvelopeEditor";
-import { FilterEqPad } from "./components/FilterEqPad";
-import { SynthModPads } from "./components/SynthModPads";
+import { WorkstationNav, Workspace } from "./components/workstation/WorkstationNav";
+import { SoundRack } from "./components/workstation/SoundRack";
+import { PatternTools } from "./components/workstation/PatternTools";
+import { ChannelMixer } from "./components/workstation/ChannelMixer";
+import { MAX_PROJECT_BYTES, parseProject, serializeProject } from "./state/project";
+import { normalizeSynthCell } from "./audio/songModel";
 import { buildDefaultInstrument } from "./state/instrumentDefaults";
-import { DEFAULT_PRESET_SEND, getMatchingPresetId, getPresetsForType } from "./state/instrumentPresets";
 import { useSong } from "./state/songContext";
 import {
-  DelayDivision,
-  DelayBusTargetId,
   JsonPatchOp,
   PatchMeta,
   Pattern,
-  ReverbBusTargetId,
   SongState,
   SynthStep,
   Track,
   TrackType,
-  WaveformType,
 } from "./types/song";
 
 const MIN_OCTAVE_BASE = 24;
@@ -63,24 +60,6 @@ const PATTERN_PREVIEW_COLS = 16;
 const PATTERN_PREVIEW_HEIGHT = 24;
 
 const uid = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-const AVAILABLE_FX_TYPES: FxType[] = ["saturator", "eq3", "chorus", "djFilter"];
-const FX_TYPE_LABEL: Record<FxType, string> = {
-  saturator: "Saturator",
-  eq3: "EQ3",
-  chorus: "Chorus",
-  djFilter: "DJ Filter",
-};
-const DELAY_DIVISIONS: DelayDivision[] = ["1/4", "1/8", "1/8d", "1/16"];
-const DELAY_BUS_OPTIONS: Array<{ id: DelayBusTargetId; label: string }> = [
-  { id: "custom", label: "Custom" },
-  { id: "echoA", label: "Echo A" },
-  { id: "echoB", label: "Echo B" },
-];
-const REVERB_BUS_OPTIONS: Array<{ id: ReverbBusTargetId; label: string }> = [
-  { id: "custom", label: "Custom" },
-  { id: "roomA", label: "Room A" },
-  { id: "hallB", label: "Hall B" },
-];
 const deepClone = <T,>(value: T): T => {
   if (typeof structuredClone === "function") {
     return structuredClone(value);
@@ -94,31 +73,6 @@ const isBlackKey = (pitch: number) => [1, 3, 6, 8, 10].includes(getPitchClass(pi
 const toNoteName = (pitch: number) => noteNames[getPitchClass(pitch)];
 const toNoteWithOctave = (pitch: number) => `${toNoteName(pitch)}${Math.floor(pitch / 12) - 1}`;
 const isPitchInEditableRange = (pitch: number) => pitch >= MIN_VISIBLE_PITCH && pitch <= MAX_VISIBLE_PITCH;
-
-const normalizeSynthCell = (cell: unknown): SynthStep[] => {
-  if (!cell) {
-    return [];
-  }
-  if (Array.isArray(cell)) {
-    return cell.filter(
-      (n): n is SynthStep =>
-        typeof n === "object" &&
-        n !== null &&
-        typeof (n as SynthStep).pitch === "number" &&
-        typeof (n as SynthStep).length === "number" &&
-        typeof (n as SynthStep).velocity === "number"
-    );
-  }
-  if (
-    typeof cell === "object" &&
-    typeof (cell as SynthStep).pitch === "number" &&
-    typeof (cell as SynthStep).length === "number" &&
-    typeof (cell as SynthStep).velocity === "number"
-  ) {
-    return [cell as SynthStep];
-  }
-  return [];
-};
 
 const nextPatternIdFromRecord = (patterns: Record<string, unknown>): string => {
   const used = new Set<number>();
@@ -306,7 +260,7 @@ const DEFAULT_AI_LOCKS: AiLockState = {
 const createEmptySynthSteps = (): SynthStep[][] => Array.from({ length: 16 }, () => []);
 const createEmptyDrumSteps = () => Array.from({ length: 16 }, () => ({ kick: 0, snare: 0, hat: 0 }));
 type SynthStepVisual = "off" | "single" | "start" | "middle" | "end";
-type NumericInstrumentKey = Exclude<keyof Track["instrument"], "oscWaveformA" | "oscWaveformB">;
+
 
 const findPreviousOverlappingStart = (steps: SynthStep[][], pitch: number, startStep: number): number | null => {
   for (let step = startStep - 1; step >= 0; step -= 1) {
@@ -505,62 +459,10 @@ interface TimelinePatternClipboard {
   pattern: Pattern;
 }
 
-interface ExportedSongFile {
-  format: "audio-sequencer-song";
-  version: 1;
-  exportedAt: string;
-  song: SongState;
-}
-
 const getDefaultLoopRange = (bars: number): LoopRange => ({
   start: 0,
   end: Math.max(0, Math.min(3, bars - 1)),
 });
-
-const isSongStateLike = (value: unknown): value is SongState => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as Partial<SongState>;
-  if (
-    typeof candidate.tempo !== "number" ||
-    typeof candidate.swing !== "number" ||
-    typeof candidate.bars !== "number" ||
-    !Array.isArray(candidate.tracks)
-  ) {
-    return false;
-  }
-  return candidate.tracks.every((track) => {
-    if (!track || typeof track !== "object") {
-      return false;
-    }
-    const t = track as Partial<SongState["tracks"][number]>;
-    return (
-      typeof t.id === "string" &&
-      typeof t.name === "string" &&
-      (t.type === "synth" || t.type === "drums") &&
-      !!t.instrument &&
-      typeof t.instrument === "object" &&
-      !!t.patterns &&
-      typeof t.patterns === "object" &&
-      Array.isArray(t.lane)
-    );
-  });
-};
-
-const parseImportedSong = (value: unknown): SongState | null => {
-  if (isSongStateLike(value)) {
-    return value;
-  }
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-  const wrapped = value as Partial<ExportedSongFile>;
-  if (wrapped.format !== "audio-sequencer-song" || wrapped.version !== 1 || !isSongStateLike(wrapped.song)) {
-    return null;
-  }
-  return wrapped.song;
-};
 
 function App() {
   const {
@@ -569,6 +471,8 @@ function App() {
     auditionPatchId,
     canUndo,
     canRedo,
+    saveStatus,
+    stateError,
     commitPatch,
     startAudition,
     stopAudition,
@@ -580,6 +484,11 @@ function App() {
     applySingleReplace,
   } = useSong();
 
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [workspace, setWorkspace] = useState<Workspace>("compose");
+  const [expressionStep, setExpressionStep] = useState(0);
+  const [soloId, setSoloId] = useState<string | null>(null);
   const [selectedTrack, setSelectedTrack] = useState(0);
   const [selectedBar, setSelectedBar] = useState(0);
   const [lockToActive, setLockToActive] = useState(false);
@@ -588,19 +497,12 @@ function App() {
   const [loopStripDrag, setLoopStripDrag] = useState<LoopStripDragState | null>(null);
   const [playhead, setPlayhead] = useState({ bar: 0, step: 0 });
   const [isPlaying, setIsPlaying] = useState(false);
-  const [masterVolume, setMasterVolume] = useState(0.8);
+  const masterVolume = song.masterVolume ?? .8;
+  const setMasterVolume = (value: number) => commitPatch({ id: uid(), author: "user", label: "Master output", explanation: "Master output", ops: [{op:"add",path:"/masterVolume",value}] });
   const [synthDrag, setSynthDrag] = useState<SynthDragState | null>(null);
   const [synthHover, setSynthHover] = useState<SynthHoverState | null>(null);
-  const [adsrOpen, setAdsrOpen] = useState(false);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [modOpen, setModOpen] = useState(false);
-  const [oscOpen, setOscOpen] = useState(false);
-  const [fxRackOpen, setFxRackOpen] = useState(false);
-  const [masterFxRackOpen, setMasterFxRackOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
-  const [isSoundOpen, setIsSoundOpen] = useState(false);
-  const [isTrackNameEditing, setIsTrackNameEditing] = useState(false);
-  const [trackNameDraft, setTrackNameDraft] = useState("");
+
   const [isMobileAddTrackMenuOpen, setIsMobileAddTrackMenuOpen] = useState(false);
   const [octaveBase, setOctaveBase] = useState(DEFAULT_OCTAVE_BASE);
   const [octaveScrubOffsetPx, setOctaveScrubOffsetPx] = useState(0);
@@ -652,7 +554,7 @@ function App() {
   });
 
   const engineRef = useRef<AudioEngine | null>(null);
-  const trackNameInputRef = useRef<HTMLInputElement | null>(null);
+
   const songRef = useRef<SongState>(song);
   const octaveScrubRef = useRef<OctaveScrubState | null>(null);
   const octaveTransitionTimerRef = useRef<number | null>(null);
@@ -682,6 +584,7 @@ function App() {
     startY: number;
   } | null>(null);
   const timelineBarLongPressTimerRef = useRef<number | null>(null);
+  const readLevels = useCallback(() => engineRef.current?.readLevels() ?? {}, []);
   const onEngineTick = useCallback((info: { bar: number; step: number }) => {
     setPlayhead(info);
     setEditorSweepStep(info.step);
@@ -727,8 +630,8 @@ function App() {
   }, [masterVolume]);
 
   useEffect(() => {
-    engineRef.current?.setMutedTrackIds(mutedTrackIds);
-  }, [mutedTrackIds]);
+    engineRef.current?.setMutedTrackIds([...new Set([...mutedTrackIds, ...song.tracks.filter(t => soloId && t.id !== soloId).map(t => t.id)])]);
+  }, [mutedTrackIds, soloId, song.tracks]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || !isPlaying) {
@@ -889,11 +792,7 @@ function App() {
     Math.max(0, timelineContentWidthPx - loopStripEndHitLeftPx)
   );
   const addBarsTailLeftPx = timelineGridOffsetPx + timelineContentWidthPx - timelineScrollLeft + rootRemPx * 0.14;
-  const availablePresets = useMemo(() => (track ? getPresetsForType(track.type) : []), [track]);
-  const selectedPresetId = useMemo(
-    () => (track ? getMatchingPresetId(track.type, track.instrument, track.send) : null),
-    [track]
-  );
+
   const buildPitchRows = useCallback((base: number) => {
     const rows: Array<{ pitch: number; ghost: boolean; inRange: boolean }> = [];
     for (let pitch = base + 13; pitch >= base + 12; pitch -= 1) {
@@ -942,7 +841,7 @@ function App() {
 
   useEffect(() => {
     if (!track) {
-      setIsSoundOpen(false);
+      setWorkspace("compose");
     }
   }, [track]);
 
@@ -970,6 +869,14 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") { engineRef.current?.pause(); setIsPlaying(false); }
+    };
+    document.addEventListener("visibilitychange", onHidden);
+    return () => { document.removeEventListener("visibilitychange", onHidden); engineRef.current?.stop(); };
+  }, []);
+
   const onPlay = useCallback(async () => {
     if (!engineRef.current) {
       return;
@@ -978,7 +885,7 @@ function App() {
       return;
     }
     await engineRef.current.play(() => songRef.current);
-    setIsPlaying(true);
+    setIsPlaying(engineRef.current.playing);
   }, []);
 
   const syncTimelineScroll = useCallback((sourceIndex: number, scrollLeft: number) => {
@@ -1063,10 +970,7 @@ function App() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.code !== "Space" || event.repeat) {
-        return;
-      }
-
+      if (event.repeat) return;
       const target = event.target as HTMLElement | null;
       if (target) {
         const tag = target.tagName;
@@ -1075,17 +979,16 @@ function App() {
         }
       }
 
-      event.preventDefault();
-      if (isPlaying) {
-        onPause();
-      } else {
-        void onPlay();
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") {
+        event.preventDefault(); if(event.shiftKey) redo(); else undo(); return;
       }
+      if (event.code !== "Space" || target?.closest("button,[role=slider]")) return;
+      event.preventDefault();
+      if (isPlaying) onPause(); else void onPlay();
     };
-
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isPlaying, onPause, onPlay]);
+  }, [isPlaying, onPause, onPlay, undo, redo]);
 
   const createAndCommit = (label: string, ops: JsonPatchOp[]) => {
     commitPatch({
@@ -1387,42 +1290,6 @@ function App() {
     });
   };
 
-  useEffect(() => {
-    if (track) {
-      setTrackNameDraft(track.name);
-    }
-    setIsTrackNameEditing(false);
-  }, [track?.id, track?.name]);
-
-  useEffect(() => {
-    if (isTrackNameEditing) {
-      trackNameInputRef.current?.focus();
-      trackNameInputRef.current?.select();
-    }
-  }, [isTrackNameEditing]);
-
-  const commitTrackNameDraft = () => {
-    if (!track) {
-      return;
-    }
-    const trimmed = trackNameDraft.trim();
-    const nextName = trimmed.length > 0 ? trimmed : track.name;
-    setIsTrackNameEditing(false);
-    setTrackNameDraft(nextName);
-    if (nextName !== track.name) {
-      applySingleReplace(`/tracks/${safeTrackIndex}/name`, nextName, `Rename ${track.name} Track`);
-    }
-  };
-
-  const cancelTrackNameEdit = () => {
-    if (!track) {
-      setIsTrackNameEditing(false);
-      return;
-    }
-    setTrackNameDraft(track.name);
-    setIsTrackNameEditing(false);
-  };
-
   const onSynthEditorPointerLeave = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse") {
       return;
@@ -1526,14 +1393,6 @@ function App() {
     });
 
     createAndCommit("Edit Drum Step", ops);
-  };
-
-  const onParamChange = (key: NumericInstrumentKey, value: number) => {
-    applySingleReplace(`/tracks/${safeTrackIndex}/instrument/${key}`, value, `Adjust ${key}`);
-  };
-
-  const onWaveformChange = (key: "oscWaveformA" | "oscWaveformB", value: WaveformType) => {
-    applySingleReplace(`/tracks/${safeTrackIndex}/instrument/${key}`, value, `Adjust ${key}`);
   };
 
   const onPreviewSynthPitch = useCallback((pitch: number) => {
@@ -1666,33 +1525,6 @@ function App() {
       window.removeEventListener("pointercancel", onPointerDone);
     };
   }, [onPreviewDrumLane]);
-
-  const onPresetChange = (presetId: string) => {
-    if (!track || presetId === "custom") {
-      return;
-    }
-
-    const preset = availablePresets.find((item) => item.id === presetId);
-    if (!preset) {
-      return;
-    }
-
-    createAndCommit(`Apply ${preset.label} Preset`, [
-      {
-        op: "replace",
-        path: `/tracks/${safeTrackIndex}/instrument`,
-        value: { ...preset.params },
-      },
-      {
-        op: "replace",
-        path: `/tracks/${safeTrackIndex}/send`,
-        value: {
-          ...DEFAULT_PRESET_SEND,
-          ...preset.send,
-        },
-      },
-    ]);
-  };
 
   const addBars = (count = 4) => {
     const ops: JsonPatchOp[] = [
@@ -2121,240 +1953,18 @@ function App() {
           ? "No proposals were generated for that prompt. Try a more direct command or a narrower scope."
           : "No proposals yet. Use a prompt below.";
 
-  const addTrackFx = (trackIndex: number, type: FxType) => {
-    createAndCommit(`Add ${FX_TYPE_LABEL[type]} FX`, [
-      {
-        op: "add",
-        path: `/tracks/${trackIndex}/insertFx/-`,
-        value: createFxInstance(type, uid()),
-      },
-    ]);
-  };
-
-  const addMasterFx = (type: FxType) => {
-    createAndCommit(`Add Master ${FX_TYPE_LABEL[type]} FX`, [
-      {
-        op: "add",
-        path: "/masterFx/-",
-        value: createFxInstance(type, uid()),
-      },
-    ]);
-  };
-
-  const toggleFxEnabled = (path: string, enabled: boolean) => {
-    applySingleReplace(path, !enabled, enabled ? "Disable FX" : "Enable FX");
-  };
-
-  const removeFx = (path: string) => {
-    createAndCommit("Remove FX", [{ op: "remove", path }]);
-  };
-
-  const moveFxItem = (path: string, index: number, direction: -1 | 1, list: unknown[]) => {
-    const targetIndex = index + direction;
-    if (targetIndex < 0 || targetIndex >= list.length) {
-      return;
-    }
-    const currentValue = deepClone(list[index]);
-    const targetValue = deepClone(list[targetIndex]);
-    createAndCommit(direction < 0 ? "Move FX Up" : "Move FX Down", [
-      { op: "replace", path: `${path}/${index}`, value: targetValue },
-      { op: "replace", path: `${path}/${targetIndex}`, value: currentValue },
-    ]);
-  };
-
-  const updateFxParams = (path: string, fx: FxInstance, partial: Record<string, number>, label: string) => {
-    applySingleReplace(path, { ...fx.params, ...partial }, label);
-  };
-
-  const renderFxParamEditor = (fx: FxInstance, paramsPath: string) => {
-    if (fx.type === "saturator") {
-      const params = fx.params as FxInstance<"saturator">["params"];
-      return (
-        <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
-          <label>
-            <span>Drive</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={params.drive}
-              onChange={(e) =>
-                updateFxParams(paramsPath, fx, { drive: Number(e.target.value) }, "Adjust Saturator Drive")
-              }
-            />
-            <span>{params.drive.toFixed(2)}</span>
-          </label>
-          <label>
-            <span>Mix</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={params.mix}
-              onChange={(e) => updateFxParams(paramsPath, fx, { mix: Number(e.target.value) }, "Adjust Saturator Mix")}
-            />
-            <span>{params.mix.toFixed(2)}</span>
-          </label>
-          <label>
-            <span>Output</span>
-            <input
-              type="range"
-              min={0}
-              max={1.4}
-              step={0.01}
-              value={params.output}
-              onChange={(e) =>
-                updateFxParams(paramsPath, fx, { output: Number(e.target.value) }, "Adjust Saturator Output")
-              }
-            />
-            <span>{params.output.toFixed(2)}</span>
-          </label>
-        </div>
-      );
-    }
-
-    if (fx.type === "chorus") {
-      const params = fx.params as FxInstance<"chorus">["params"];
-      return (
-        <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
-          <label>
-            <span>Rate</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={params.rate}
-              onChange={(e) => updateFxParams(paramsPath, fx, { rate: Number(e.target.value) }, "Adjust Chorus Rate")}
-            />
-            <span>{params.rate.toFixed(2)}</span>
-          </label>
-          <label>
-            <span>Depth</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={params.depth}
-              onChange={(e) =>
-                updateFxParams(paramsPath, fx, { depth: Number(e.target.value) }, "Adjust Chorus Depth")
-              }
-            />
-            <span>{params.depth.toFixed(2)}</span>
-          </label>
-          <label>
-            <span>Mix</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={params.mix}
-              onChange={(e) => updateFxParams(paramsPath, fx, { mix: Number(e.target.value) }, "Adjust Chorus Mix")}
-            />
-            <span>{params.mix.toFixed(2)}</span>
-          </label>
-        </div>
-      );
-    }
-
-    if (fx.type === "djFilter") {
-      const params = fx.params as FxInstance<"djFilter">["params"];
-      return (
-        <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
-          <label className="waveform-row">
-            <span>Mode</span>
-            <select
-              value={params.mode}
-              onChange={(e) =>
-                applySingleReplace(
-                  paramsPath,
-                  { ...params, mode: e.target.value === "hp" ? "hp" : "lp" },
-                  "Adjust DJ Filter Mode"
-                )
-              }
-            >
-              <option value="lp">Low-pass</option>
-              <option value="hp">High-pass</option>
-            </select>
-          </label>
-          <label>
-            <span>Cutoff</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={params.cutoff}
-              onChange={(e) =>
-                updateFxParams(paramsPath, fx, { cutoff: Number(e.target.value) }, "Adjust DJ Filter Cutoff")
-              }
-            />
-            <span>{params.cutoff.toFixed(2)}</span>
-          </label>
-          <label>
-            <span>Q</span>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={params.q}
-              onChange={(e) => updateFxParams(paramsPath, fx, { q: Number(e.target.value) }, "Adjust DJ Filter Q")}
-            />
-            <span>{params.q.toFixed(2)}</span>
-          </label>
-        </div>
-      );
-    }
-
-    const params = fx.params as FxInstance<"eq3">["params"];
-    return (
-      <div className="osc-controls" style={{ marginTop: "0.3rem" }}>
-        {(
-          [
-            ["low", -18, 18, 0.5, "Low"],
-            ["mid", -18, 18, 0.5, "Mid"],
-            ["high", -18, 18, 0.5, "High"],
-          ] as const
-        ).map(([key, min, max, step, label]) => (
-          <label key={key}>
-            <span>{label}</span>
-            <input
-              type="range"
-              min={min}
-              max={max}
-              step={step}
-              value={params[key]}
-              onChange={(e) => updateFxParams(paramsPath, fx, { [key]: Number(e.target.value) }, `Adjust EQ3 ${label}`)}
-            />
-            <span>{params[key].toFixed(1)} dB</span>
-          </label>
-        ))}
-      </div>
-    );
-  };
-
   const onSaveSongToFile = useCallback(() => {
     if (typeof window === "undefined") {
       return;
     }
     try {
-      const payload: ExportedSongFile = {
-        format: "audio-sequencer-song",
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        song: committedSong,
-      };
+      const payload = serializeProject(committedSong);
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
       const url = window.URL.createObjectURL(blob);
       const anchor = document.createElement("a");
       const stamp = payload.exportedAt.replace(/[:.]/g, "-");
       anchor.href = url;
-      anchor.download = `audio-sequencer-song-${stamp}.frog`;
+      anchor.download = `${(committedSong.title || "Untitled session").replace(/[^a-zA-Z0-9_-]/g,"-")}-${stamp}.frog`;
       document.body.appendChild(anchor);
       anchor.click();
       document.body.removeChild(anchor);
@@ -2363,6 +1973,19 @@ function App() {
       console.warn("[song] Failed to export song file", error);
     }
   }, [committedSong]);
+
+  const onExportWav = async () => {
+    setIsExporting(true); setExportError(null);
+    try {
+      const { renderSongWav } = await import("./audio/exportWav");
+      const blob = await renderSongWav(committedSong);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url;
+      a.download = `${(committedSong.title || "Untitled session").replace(/[^a-zA-Z0-9_-]/g,"-")}.wav`;
+      a.click(); window.setTimeout(()=>URL.revokeObjectURL(url),1000);
+    } catch (error) { setExportError(error instanceof Error ? error.message : "Audio export failed."); }
+    finally { setIsExporting(false); }
+  };
 
   const onImportSongClick = () => {
     importFileInputRef.current?.click();
@@ -2627,8 +2250,9 @@ function App() {
       }
 
       try {
+        if (file.size > MAX_PROJECT_BYTES) throw new Error("Project exceeds 8 MB.");
         const parsed = JSON.parse(await file.text()) as unknown;
-        const nextSong = parseImportedSong(parsed);
+        const nextSong = parseProject(parsed);
         if (!nextSong) {
           throw new Error("Invalid song file format.");
         }
@@ -3129,6 +2753,11 @@ function App() {
                       synthVisual !== "off" ? "on" : "",
                       `note-${synthVisual}`,
                     ].join(" ")}
+                    aria-label={`${toNoteWithOctave(pitch)}, step ${step + 1}`}
+                    aria-pressed={synthVisual !== "off"}
+                    onKeyDown={event => { if (event.key === "Enter" || event.key === " ") {event.preventDefault();event.stopPropagation();onToggleSynthCell(step,pitch);} }}
+                    onFocus={() => setExpressionStep(step)}
+                    onContextMenu={event => {event.preventDefault();setExpressionStep(step);}}
                     data-synth-cell="1"
                     data-step={step}
                     data-pitch={pitch}
@@ -3146,6 +2775,14 @@ function App() {
 
   const timelineDock = (
     <section className={["timeline-dock", timelineBarAction ? "bar-action-mode" : ""].join(" ")} aria-label="Timeline">
+      <div className="arrange-toolbar">
+        <button onClick={()=>setWorkspace("compose")}>Edit pattern →</button>
+        <button onClick={()=>setTimelineBarAction({trackIndex:safeTrackIndex,bar:selectedBar,clientX:window.innerWidth/2,clientY:window.innerHeight/2})}>Clip actions</button>
+        <button onClick={()=>addTrack("synth")} disabled={song.tracks.length>=64}>+ Synth</button>
+        <button onClick={()=>addTrack("drums")} disabled={song.tracks.length>=64}>+ Drums</button>
+        <label>Loop <input aria-label="Loop enabled" type="checkbox" checked={!!loopRange} onChange={e=>setLoopRange(e.target.checked?{start:selectedBar,end:selectedBar}:null)}/></label>
+        {loopRange && <><label>From <input aria-label="Loop start bar" type="number" min={1} max={song.bars} value={loopRange.start+1} onChange={e=>{const v=Math.max(0,Math.min(song.bars-1,Number(e.target.value)-1));setLoopRange({start:v,end:Math.max(v,loopRange.end)});}}/></label><label>To <input aria-label="Loop end bar" type="number" min={loopRange.start+1} max={song.bars} value={loopRange.end+1} onChange={e=>setLoopRange({...loopRange,end:Math.max(loopRange.start,Math.min(song.bars-1,Number(e.target.value)-1))})}/></label></>}
+      </div>
       <div className="timeline-content">
         {track && (
           <>
@@ -3242,7 +2879,7 @@ function App() {
                   onClick={() => {
                     setSelectedTrack(trackIndex);
                     setIsAiOpen(false);
-                    setIsSoundOpen(true);
+                    setWorkspace("sound");
                   }}
                   aria-label={`Open sound controls for ${t.name}`}
                   title={`Open sound controls for ${t.name}`}
@@ -3310,6 +2947,8 @@ function App() {
                       }}
                       onContextMenu={(event) => onTimelineBarContextMenu(trackIndex, bar, event)}
                       onPointerDown={(event) => onTimelineBarPointerDown(trackIndex, bar, event)}
+                      aria-label={`${t.name}, bar ${bar+1}, ${t.lane[bar] === "0" ? "empty" : `pattern ${t.lane[bar]}`}`}
+                      aria-pressed={selectedBar === bar && safeTrackIndex === trackIndex}
                       data-bar-index={bar}
                     >
                       {t.lane[bar]}
@@ -3561,6 +3200,7 @@ function App() {
   return (
     <div
       className="app-shell"
+      data-workspace={workspace}
       onPointerDownCapture={() => {
         void getOrCreateEngine().ensureContext();
       }}
@@ -3568,8 +3208,10 @@ function App() {
       <header className="topbar">
         <div className="topbar-brand" aria-label="Grinning Frog Sequencer">
           <img src="/GF_Logo_small.bmp" alt="" className="topbar-logo" />
-          <h1>Grinning Frog Sequencer</h1>
+          <h1>Grinning Frog <span>Sequencer</span></h1>
+          <span className={`save-indicator ${saveStatus}`} role="status" aria-label="Autosave">{saveStatus === "saved" ? "Saved locally" : saveStatus === "saving" ? "Saving…" : "Storage full · export a copy"}</span>
         </div>
+        <input className="project-title" aria-label="Project title" maxLength={120} placeholder="Untitled session" value={song.title ?? ""} onChange={e => createAndCommit("Name project", [{op:"add",path:"/title",value:e.target.value}])} />
         <div className="top-controls">
           <div className="control-group transport-group">
             <button
@@ -3621,7 +3263,12 @@ function App() {
               📂
             </span>
           </button>
-          <button className="mobile-hide" onClick={newSong}>New Song</button>
+          <details className="project-menu"><summary aria-label="Project actions">Project ▾</summary><div>
+            <button onClick={newSong}>New Song</button><button onClick={()=>setIsAiOpen(true)}>Smart Patch</button>
+            <button onClick={onSaveSongToFile}>Export project</button>
+            <button onClick={onImportSongClick}>Import project</button>
+            <button onClick={()=>void onExportWav()} disabled={isExporting}>{isExporting ? "Rendering…" : "Export WAV"}</button>
+          </div></details>
           <button
             type="button"
             className="mobile-new-song-inline"
@@ -3634,7 +3281,7 @@ function App() {
             type="button"
             className="ai-dock-button"
             onClick={() => {
-              setIsSoundOpen(false);
+              setWorkspace("compose");
               setIsAiOpen(true);
             }}
             aria-label="Open Smart Patch panel"
@@ -3702,15 +3349,22 @@ function App() {
             />
             <span>{Math.round(masterVolume * 100)}%</span>
           </label>
+          <label className="swing-control">Swing<input aria-label="Swing" type="range" min={0} max={.75} step={.01} value={song.swing} onChange={e=>applySingleReplace("/swing",Number(e.target.value),"Swing")}/><output>{Math.round(song.swing*100)}%</output></label>
           <span>
-            Playhead: Bar {playhead.bar + 1} Step {playhead.step + 1}
+            {isPlaying ? "Playing" : "Stopped"} · {playhead.bar + 1}.{playhead.step + 1}
           </span>
         </div>
+        <WorkstationNav workspace={workspace} onChange={setWorkspace} tracks={song.tracks} selectedTrack={safeTrackIndex} onTrackChange={setSelectedTrack} bar={selectedBar} onBarChange={setSelectedBar} bars={song.bars}/>
+        {(stateError || exportError) && <p role="alert">{stateError || exportError}</p>}
       </header>
 
-      <main className="panel">
+      <main className="panel" id="workspace-main">
+        {workspace === "mix" && <ChannelMixer song={song} muted={mutedTrackIds} onMute={toggleTrackMute} soloId={soloId} onSolo={id => setSoloId(v => v === id ? null : id)} commit={createAndCommit} readLevels={readLevels} master={masterVolume} onMaster={setMasterVolume} onSound={index => {setSelectedTrack(index);setWorkspace("sound");}}/>}
         <div className="workspace">
-          <section className="main-view">
+          <section className="main-view" aria-label="Composition">
+            {track && <PatternTools track={track} trackIndex={safeTrackIndex} patternId={patternId} bar={selectedBar} step={expressionStep} onStep={setExpressionStep} commit={createAndCommit}/>}
+            <div className="mobile-step-banks" aria-label="Visible steps"><span>Step view</span>{[0,1].map(bank=><button key={bank} onClick={()=>{document.querySelectorAll<HTMLElement>(".octave-grid-viewport,.pattern-editor-stage").forEach(el=>el.scrollTo({left:bank===0?0:el.scrollWidth-el.clientWidth,behavior:"smooth"}));}}> {bank===0?"1–8":"9–16"} </button>)}</div>
+            <div className="beat-ruler" aria-hidden="true"><span>BEAT</span>{Array.from({length:16},(_,i)=><span key={i}>{i%4===0?i/4+1:"·"}</span>)}</div>
             {track && (
               <section className="pattern-editor-stage">
                 {track.type === "synth" && (
@@ -3820,7 +3474,10 @@ function App() {
                                 "step-cell",
                                 velocity > 0 ? "on" : "",
                               ].join(" ")}
-                              onClick={() => onToggleDrumCell(step, lane)}
+                              aria-label={`${lane}, step ${step+1}`}
+                              aria-pressed={velocity > 0}
+                              onFocus={() => setExpressionStep(step)}
+                              onClick={() => {setExpressionStep(step);onToggleDrumCell(step, lane);}}
                             />
                           );
                         })}
@@ -3833,710 +3490,17 @@ function App() {
           </section>
 
           {track && (
-            <aside
-              className={["sound-column", isSoundOpen ? "open" : ""].join(" ")}
-              aria-label="Sound Controls"
-            >
-              <div className="sound-sheet-header">
-                <div className="sound-sheet-title-block">
-                  <div className="sound-track-name-row">
-                    {isTrackNameEditing ? (
-                      <input
-                        ref={trackNameInputRef}
-                        type="text"
-                        className="sound-track-name-input"
-                        value={trackNameDraft}
-                        onChange={(e) => setTrackNameDraft(e.target.value)}
-                        onBlur={commitTrackNameDraft}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            commitTrackNameDraft();
-                          } else if (e.key === "Escape") {
-                            e.preventDefault();
-                            cancelTrackNameEdit();
-                          }
-                        }}
-                        aria-label="Edit track name"
-                        maxLength={32}
-                      />
-                    ) : (
-                      <>
-                        <h2 className="sound-track-title">{track.name}</h2>
-                        <button
-                          type="button"
-                          className="sound-track-rename-button"
-                          onClick={() => setIsTrackNameEditing(true)}
-                          aria-label={`Rename track ${track.name}`}
-                          title={`Rename track ${track.name}`}
-                        >
-                          <span aria-hidden="true">✎</span>
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="sound-sheet-close"
-                  onClick={() => setIsSoundOpen(false)}
-                  aria-label="Close Sound panel"
-                >
-                  Close
-                </button>
-              </div>
-              <label className="preset-select">
-                <span>Preset</span>
-                <select value={selectedPresetId ?? "custom"} onChange={(e) => onPresetChange(e.target.value)}>
-                  <option value="custom">Custom</option>
-                  {availablePresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="sound-card-section">
-                <button
-                  type="button"
-                  className={fxRackOpen ? "section-toggle open" : "section-toggle"}
-                  onClick={() => setFxRackOpen((prev) => !prev)}
-                  aria-expanded={fxRackOpen}
-                >
-                  FX Rack
-                </button>
-                {fxRackOpen && (
-                  <>
-                    <div className="osc-controls">
-                      <label>
-                        <span>Delay Send</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.send.delay}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              `/tracks/${safeTrackIndex}/send/delay`,
-                              Number(e.target.value),
-                              `Adjust ${track.name} Delay Send`
-                            )
-                          }
-                        />
-                        <span>{track.send.delay.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Reverb Send</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.send.reverb}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              `/tracks/${safeTrackIndex}/send/reverb`,
-                              Number(e.target.value),
-                              `Adjust ${track.name} Reverb Send`
-                            )
-                          }
-                        />
-                        <span>{track.send.reverb.toFixed(2)}</span>
-                      </label>
-                      <label className="waveform-row">
-                        <span>Delay Bus</span>
-                        <select
-                          value={track.send.delayBus}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              `/tracks/${safeTrackIndex}/send/delayBus`,
-                              e.target.value as DelayBusTargetId,
-                              `Route ${track.name} Delay Bus`
-                            )
-                          }
-                        >
-                          {DELAY_BUS_OPTIONS.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label className="waveform-row">
-                        <span>Reverb Bus</span>
-                        <select
-                          value={track.send.reverbBus}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              `/tracks/${safeTrackIndex}/send/reverbBus`,
-                              e.target.value as ReverbBusTargetId,
-                              `Route ${track.name} Reverb Bus`
-                            )
-                          }
-                        >
-                          {REVERB_BUS_OPTIONS.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        <span>Delay Tone</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.send.delayTone}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              `/tracks/${safeTrackIndex}/send/delayTone`,
-                              Number(e.target.value),
-                              `Adjust ${track.name} Delay Tone`
-                            )
-                          }
-                        />
-                        <span>{track.send.delayTone.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Reverb Tone</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.send.reverbTone}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              `/tracks/${safeTrackIndex}/send/reverbTone`,
-                              Number(e.target.value),
-                              `Adjust ${track.name} Reverb Tone`
-                            )
-                          }
-                        />
-                        <span>{track.send.reverbTone.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Reverb LowCut</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.send.reverbLowCut}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              `/tracks/${safeTrackIndex}/send/reverbLowCut`,
-                              Number(e.target.value),
-                              `Adjust ${track.name} Reverb Low Cut`
-                            )
-                          }
-                        />
-                        <span>{track.send.reverbLowCut.toFixed(2)}</span>
-                      </label>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.35rem" }}>
-                      {AVAILABLE_FX_TYPES.map((fxType) => (
-                        <button
-                          key={`track-add-${fxType}`}
-                          type="button"
-                          onClick={() => addTrackFx(safeTrackIndex, fxType)}
-                        >
-                          + {FX_TYPE_LABEL[fxType]}
-                        </button>
-                      ))}
-                    </div>
-                    <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.45rem" }}>
-                      {track.insertFx.length === 0 && <span style={{ opacity: 0.7 }}>No track insert FX</span>}
-                      {track.insertFx.map((fx, index) => (
-                        <div key={fx.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: "0.5rem", padding: "0.35rem" }}>
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr auto auto auto auto",
-                              alignItems: "center",
-                              gap: "0.35rem",
-                            }}
-                          >
-                            <span>
-                              {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                toggleFxEnabled(`/tracks/${safeTrackIndex}/insertFx/${index}/enabled`, fx.enabled)
-                              }
-                            >
-                              {fx.enabled ? "Disable" : "Enable"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, -1, track.insertFx)}
-                              disabled={index === 0}
-                            >
-                              Up
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => moveFxItem(`/tracks/${safeTrackIndex}/insertFx`, index, 1, track.insertFx)}
-                              disabled={index === track.insertFx.length - 1}
-                            >
-                              Down
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeFx(`/tracks/${safeTrackIndex}/insertFx/${index}`)}
-                            >
-                              Remove
-                            </button>
-                          </div>
-                          {renderFxParamEditor(fx, `/tracks/${safeTrackIndex}/insertFx/${index}/params`)}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-              <div className="sound-card-section">
-                <button
-                  type="button"
-                  className={masterFxRackOpen ? "section-toggle open" : "section-toggle"}
-                  onClick={() => setMasterFxRackOpen((prev) => !prev)}
-                  aria-expanded={masterFxRackOpen}
-                >
-                  Master FX Rack
-                </button>
-                {masterFxRackOpen && (
-                  <>
-                    <div className="osc-controls" style={{ marginTop: "0.2rem" }}>
-                      <label className="waveform-row">
-                        <span>Delay Time</span>
-                        <select
-                          value={song.sendFx.delay.division}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              "/sendFx/delay/division",
-                              e.target.value as DelayDivision,
-                              "Adjust Delay Division"
-                            )
-                          }
-                        >
-                          {DELAY_DIVISIONS.map((division) => (
-                            <option key={division} value={division}>
-                              {division}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <label>
-                        <span>Delay Feedback</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.sendFx.delay.feedback}
-                          onChange={(e) =>
-                            applySingleReplace("/sendFx/delay/feedback", Number(e.target.value), "Adjust Delay Feedback")
-                          }
-                        />
-                        <span>{song.sendFx.delay.feedback.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Delay Tone</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.sendFx.delay.tone}
-                          onChange={(e) =>
-                            applySingleReplace("/sendFx/delay/tone", Number(e.target.value), "Adjust Delay Tone")
-                          }
-                        />
-                        <span>{song.sendFx.delay.tone.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Delay Wet</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.sendFx.delay.wet}
-                          onChange={(e) =>
-                            applySingleReplace("/sendFx/delay/wet", Number(e.target.value), "Adjust Delay Wet")
-                          }
-                        />
-                        <span>{song.sendFx.delay.wet.toFixed(2)}</span>
-                      </label>
-                    </div>
-                    <div className="osc-controls" style={{ marginTop: "0.4rem" }}>
-                      <label>
-                        <span>Reverb Pre</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.sendFx.reverb.preDelay}
-                          onChange={(e) =>
-                            applySingleReplace(
-                              "/sendFx/reverb/preDelay",
-                              Number(e.target.value),
-                              "Adjust Reverb PreDelay"
-                            )
-                          }
-                        />
-                        <span>{song.sendFx.reverb.preDelay.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Reverb Decay</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.sendFx.reverb.decay}
-                          onChange={(e) =>
-                            applySingleReplace("/sendFx/reverb/decay", Number(e.target.value), "Adjust Reverb Decay")
-                          }
-                        />
-                        <span>{song.sendFx.reverb.decay.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Reverb Tone</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.sendFx.reverb.tone}
-                          onChange={(e) =>
-                            applySingleReplace("/sendFx/reverb/tone", Number(e.target.value), "Adjust Reverb Tone")
-                          }
-                        />
-                        <span>{song.sendFx.reverb.tone.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Reverb Wet</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.sendFx.reverb.wet}
-                          onChange={(e) =>
-                            applySingleReplace("/sendFx/reverb/wet", Number(e.target.value), "Adjust Reverb Wet")
-                          }
-                        />
-                        <span>{song.sendFx.reverb.wet.toFixed(2)}</span>
-                      </label>
-                      <label className="waveform-row">
-                        <span>Reverb Eco</span>
-                        <input
-                          type="checkbox"
-                          checked={song.sendFx.reverb.eco}
-                          onChange={(e) =>
-                            applySingleReplace("/sendFx/reverb/eco", e.target.checked, "Toggle Reverb Eco")
-                          }
-                        />
-                      </label>
-                    </div>
-                    <div className="osc-controls" style={{ marginTop: "0.4rem" }}>
-                      <label className="waveform-row">
-                        <span>Eco Mode</span>
-                        <input
-                          type="checkbox"
-                          checked={song.performance.ecoMode}
-                          onChange={(e) =>
-                            applySingleReplace("/performance/ecoMode", e.target.checked, "Toggle Eco Mode")
-                          }
-                        />
-                      </label>
-                      <label className="waveform-row">
-                        <span>Master Safety</span>
-                        <input
-                          type="checkbox"
-                          checked={song.masterSafety.enabled}
-                          onChange={(e) =>
-                            applySingleReplace("/masterSafety/enabled", e.target.checked, "Toggle Master Safety")
-                          }
-                        />
-                      </label>
-                      <label>
-                        <span>Safety Amt</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={song.masterSafety.amount}
-                          onChange={(e) =>
-                            applySingleReplace("/masterSafety/amount", Number(e.target.value), "Adjust Master Safety")
-                          }
-                        />
-                        <span>{song.masterSafety.amount.toFixed(2)}</span>
-                      </label>
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "0.35rem", marginTop: "0.35rem" }}>
-                      {AVAILABLE_FX_TYPES.map((fxType) => (
-                        <button key={`master-add-${fxType}`} type="button" onClick={() => addMasterFx(fxType)}>
-                          + {FX_TYPE_LABEL[fxType]}
-                        </button>
-                      ))}
-                    </div>
-                    <div style={{ display: "grid", gap: "0.35rem", marginTop: "0.45rem" }}>
-                      {song.masterFx.length === 0 && <span style={{ opacity: 0.7 }}>No master insert FX</span>}
-                      {song.masterFx.map((fx, index) => (
-                        <div key={fx.id} style={{ border: "1px solid rgba(255,255,255,0.08)", borderRadius: "0.5rem", padding: "0.35rem" }}>
-                          <div
-                            style={{
-                              display: "grid",
-                              gridTemplateColumns: "1fr auto auto auto auto",
-                              alignItems: "center",
-                              gap: "0.35rem",
-                            }}
-                          >
-                            <span>
-                              {index + 1}. {FX_TYPE_LABEL[fx.type]} {fx.enabled ? "" : "(bypassed)"}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => toggleFxEnabled(`/masterFx/${index}/enabled`, fx.enabled)}
-                            >
-                              {fx.enabled ? "Disable" : "Enable"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => moveFxItem("/masterFx", index, -1, song.masterFx)}
-                              disabled={index === 0}
-                            >
-                              Up
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => moveFxItem("/masterFx", index, 1, song.masterFx)}
-                              disabled={index === song.masterFx.length - 1}
-                            >
-                              Down
-                            </button>
-                            <button type="button" onClick={() => removeFx(`/masterFx/${index}`)}>
-                              Remove
-                            </button>
-                          </div>
-                          {renderFxParamEditor(fx, `/masterFx/${index}/params`)}
-                        </div>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-              {track.type === "synth" && (
-                <div className="sound-card-section">
-                  <button
-                    type="button"
-                    className={oscOpen ? "section-toggle open" : "section-toggle"}
-                    onClick={() => setOscOpen((prev) => !prev)}
-                    aria-expanded={oscOpen}
-                  >
-                    Osc
-                  </button>
-                  {oscOpen && (
-                    <div className="osc-controls">
-                      <label className="waveform-row">
-                        <span>Osc A</span>
-                        <select
-                          value={track.instrument.oscWaveformA}
-                          onChange={(e) => onWaveformChange("oscWaveformA", e.target.value as WaveformType)}
-                        >
-                          <option value="sine">Sine</option>
-                          <option value="triangle">Triangle</option>
-                          <option value="sawtooth">Saw</option>
-                          <option value="square">Square</option>
-                        </select>
-                      </label>
-                      <label className="waveform-row">
-                        <span>Osc B</span>
-                        <select
-                          value={track.instrument.oscWaveformB}
-                          onChange={(e) => onWaveformChange("oscWaveformB", e.target.value as WaveformType)}
-                        >
-                          <option value="sine">Sine</option>
-                          <option value="triangle">Triangle</option>
-                          <option value="sawtooth">Saw</option>
-                          <option value="square">Square</option>
-                        </select>
-                      </label>
-                      <label>
-                        <span>Osc Mix</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.instrument.oscMix}
-                          onChange={(e) => onParamChange("oscMix", Number(e.target.value))}
-                        />
-                        <span>{track.instrument.oscMix.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Sub Mix</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.instrument.subOscMix}
-                          onChange={(e) => onParamChange("subOscMix", Number(e.target.value))}
-                        />
-                        <span>{track.instrument.subOscMix.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Noise</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.instrument.noiseMix}
-                          onChange={(e) => onParamChange("noiseMix", Number(e.target.value))}
-                        />
-                        <span>{track.instrument.noiseMix.toFixed(2)}</span>
-                      </label>
-                      <label>
-                        <span>Width</span>
-                        <input
-                          type="range"
-                          min={0}
-                          max={1}
-                          step={0.01}
-                          value={track.instrument.stereoWidth}
-                          onChange={(e) => onParamChange("stereoWidth", Number(e.target.value))}
-                        />
-                        <span>{track.instrument.stereoWidth.toFixed(2)}</span>
-                      </label>
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="sound-card-section">
-                <button
-                  type="button"
-                  className={adsrOpen ? "section-toggle open" : "section-toggle"}
-                  onClick={() => setAdsrOpen((prev) => !prev)}
-                  aria-expanded={adsrOpen}
-                >
-                  Envelope
-                </button>
-                {adsrOpen && (
-                  <AdsrEnvelopeEditor
-                    attack={track.instrument.attack}
-                    decay={track.instrument.decay}
-                    sustain={track.instrument.sustain}
-                    release={track.instrument.release}
-                    onChange={onParamChange}
-                  />
-                )}
-              </div>
-              <div className="sound-card-section">
-                <button
-                  type="button"
-                  className={filterOpen ? "section-toggle open" : "section-toggle"}
-                  onClick={() => setFilterOpen((prev) => !prev)}
-                  aria-expanded={filterOpen}
-                >
-                  Filter EQ
-                </button>
-                {filterOpen && (
-                  <>
-                    <FilterEqPad
-                      cutoff={track.instrument.cutoff}
-                      resonance={track.instrument.resonance}
-                      onChange={onParamChange}
-                    />
-                    {track.type === "synth" && (
-                      <div className="osc-controls">
-                        <label>
-                          <span>Env Amt</span>
-                          <input
-                            type="range"
-                            min={0}
-                            max={1}
-                            step={0.01}
-                            value={track.instrument.filterEnvAmount}
-                            onChange={(e) => onParamChange("filterEnvAmount", Number(e.target.value))}
-                          />
-                          <span>{track.instrument.filterEnvAmount.toFixed(2)}</span>
-                        </label>
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-              {track.type === "synth" && (
-                <div className="sound-card-section">
-                  <button
-                    type="button"
-                    className={modOpen ? "section-toggle open" : "section-toggle"}
-                    onClick={() => setModOpen((prev) => !prev)}
-                    aria-expanded={modOpen}
-                  >
-                    Mod
-                  </button>
-                  {modOpen && (
-                    <SynthModPads
-                      detune={track.instrument.detune}
-                      drive={track.instrument.drive}
-                      vibratoRate={track.instrument.vibratoRate}
-                      vibratoDepth={track.instrument.vibratoDepth}
-                      onChange={onParamChange}
-                    />
-                  )}
-                </div>
-              )}
-              <div className="sliders">
-                {(
-                  [
-                    ["gain", 0, 1.2, 0.01],
-                    ["lofiAmount", 0, 1, 0.01],
-                  ] as Array<[NumericInstrumentKey, number, number, number]>
-                ).map(([name, min, max, step]) => (
-                  <label key={name}>
-                    <span>{name}</span>
-                    <input
-                      type="range"
-                      min={min}
-                      max={max}
-                      step={step}
-                      value={track.instrument[name]}
-                      onChange={(e) => onParamChange(name, Number(e.target.value))}
-                    />
-                    <span>{track.instrument[name].toFixed(3)}</span>
-                  </label>
-                ))}
-              </div>
-            </aside>
+            <SoundRack trackIndex={safeTrackIndex} getOrCreateEngine={getOrCreateEngine}/>
           )}
         </div>
-        {isMobileTimelineLayout && timelineDock}
+        {timelineDock}
       </main>
 
-      {!isMobileTimelineLayout && timelineDock}
 
-      {isSoundOpen && (
-        <button
-          type="button"
-          className="sound-sheet-backdrop"
-          onClick={() => setIsSoundOpen(false)}
-          aria-label="Close Sound panel"
-        />
-      )}
+
       {isAiOpen && <button type="button" className="ai-sheet-backdrop" onClick={() => setIsAiOpen(false)} />}
 
-      <section className={["ai-sheet", isAiOpen ? "open" : ""].join(" ")} aria-label="Smart Patch Panel">
+      <section className={["ai-sheet", isAiOpen ? "open" : ""].join(" ")} aria-label="Smart Patch Panel" style={{visibility: isAiOpen ? "visible" : "hidden"}}>
         <div className="ai-sheet-header">
           <div>
             <h2>Smart Patch</h2>

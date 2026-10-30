@@ -68,6 +68,21 @@ export class StepTransport {
     return false;
   }
 
+  /** Drop stale events after throttling; never replay a backlog into the audio graph. */
+  skipPast(song: SongState, now: number): number {
+    let skipped = 0;
+    const barDuration = 60 / song.tempo * 4;
+    const wholeBars = Math.max(0, Math.floor((now - this.nextStepTime) / barDuration));
+    if (wholeBars > 0) {
+      const { start, length } = this.getLoopBounds(song);
+      this.currentBar = start + ((this.currentBar - start + wholeBars) % length + length) % length;
+      this.nextStepTime += wholeBars * barDuration;
+      skipped += wholeBars * 16;
+    }
+    while (this.nextStepTime < now) { this.advance(song); skipped += 1; }
+    return skipped;
+  }
+
   advance(song: SongState): void {
     const sixteenth = 60 / song.tempo / 4;
     const clampedSwing = Math.max(0, Math.min(0.95, song.swing));

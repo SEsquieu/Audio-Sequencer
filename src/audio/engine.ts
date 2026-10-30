@@ -15,6 +15,7 @@ export interface EngineTimingDiagnostics {
   scheduleAheadTimeMs: number;
   lookaheadMs: number;
   scheduledSteps: number;
+  skippedSteps: number;
   observedStepIntervalMs: number;
   observedStepIntervalErrorMs: number;
   observedStepIntervalErrorMaxMs: number;
@@ -30,6 +31,9 @@ export { getEffectiveLoopBars } from "./songModel";
 
 export class AudioEngine {
   private context: AudioContext | null = null;
+  private playRequest = 0;
+  private tickTimers = new Set<number>();
+  private skippedSteps = 0;
   private noiseBuffer: AudioBuffer | null = null;
   private masterVolume = 0.8;
   private isPlaying = false;
@@ -115,12 +119,15 @@ export class AudioEngine {
 
   syncSongState(song: SongState) {
     this.latestSongState = song;
+    this.instrumentEngine.pruneTracks(song);
     if (!this.context) {
       return;
     }
     this.mixer.pruneTrackBuses(song);
     this.mixer.setMutedTrackIds(this.mutedTrackIds);
   }
+
+  readLevels(): Record<string, number> { return this.mixer.readLevels(); }
 
   getTimingDiagnostics(): EngineTimingDiagnostics {
     const voiceDiagnostics = this.instrumentEngine.getDiagnostics();
@@ -130,6 +137,7 @@ export class AudioEngine {
       scheduleAheadTimeMs: this.scheduleAheadTime * 1000,
       lookaheadMs: this.lookaheadMs,
       scheduledSteps: this.scheduledSteps,
+      skippedSteps: this.skippedSteps,
       observedStepIntervalMs: this.observedStepIntervalMs,
       observedStepIntervalErrorMs: this.observedStepIntervalErrorMs,
       observedStepIntervalErrorMaxMs: this.observedStepIntervalErrorMaxMs,
@@ -163,7 +171,9 @@ export class AudioEngine {
   }
 
   async play(getSong: () => SongState, resetPosition = false) {
+    const request = ++this.playRequest;
     const hasAudioContext = await this.ensureContext();
+    if (request !== this.playRequest) return;
     this.useContextClock = hasAudioContext && this.context !== null;
     if (this.isPlaying) {
       return;
@@ -189,6 +199,10 @@ export class AudioEngine {
   }
 
   pause() {
+    this.playRequest += 1;
+    for (const timer of this.tickTimers) window.clearTimeout(timer);
+    this.tickTimers.clear();
+    this.instrumentEngine.stopAllVoices();
     if (!this.isPlaying) {
       return;
     }
@@ -304,6 +318,11 @@ export class AudioEngine {
     }
     const currentTime = this.useContextClock && this.context ? this.context.currentTime : performance.now() / 1000;
 
+    const recoverySong = this.getSong();
+    if (this.transport.getNextStepTime() < currentTime - .05) {
+      this.skippedSteps += this.transport.skipPast(recoverySong, currentTime + .01);
+      this.lastScheduledStepTime = 0;
+    }
     const windowSong = this.liveEditPolicy === "schedulerWindow" ? this.getSong() : null;
     while (this.transport.getNextStepTime() < currentTime + this.scheduleAheadTime) {
       const song = windowSong ?? this.getSong();
@@ -321,7 +340,11 @@ export class AudioEngine {
           this.instrumentEngine
         );
       }
-      this.tickListener?.(position);
+      const timer = window.setTimeout(() => {
+        this.tickTimers.delete(timer);
+        if (this.isPlaying) this.tickListener?.(position);
+      }, Math.max(0, (stepTime - currentTime) * 1000));
+      this.tickTimers.add(timer);
       this.scheduledSteps += 1;
       this.diagnosticsUpdatedAtMs = performance.now();
       this.transport.advance(song);
@@ -354,6 +377,7 @@ export class AudioEngine {
   private resetTimingDiagnostics() {
     this.schedulerWakeLateMaxMs = 0;
     this.scheduledSteps = 0;
+    this.skippedSteps = 0;
     this.lastScheduledStepTime = 0;
     this.observedStepIntervalMs = 0;
     this.observedStepIntervalErrorMs = 0;
@@ -373,7 +397,7 @@ export class AudioEngine {
     const sixteenthMs = (60 / song.tempo / 4) * 1000;
     const clampedSwing = Math.max(0, Math.min(0.95, song.swing));
     const swingSkew = clampedSwing * 0.5;
-    const expectedInterval = (this.transport.getPosition().step % 2 === 0 ? 1 - swingSkew : 1 + swingSkew) * sixteenthMs;
+    const expectedInterval = (this.transport.getPosition().step % 2 === 0 ? 1 + swingSkew : 1 - swingSkew) * sixteenthMs;
     const intervalError = observedInterval - expectedInterval;
 
     this.observedStepIntervalMs = observedInterval;

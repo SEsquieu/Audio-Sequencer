@@ -1,4 +1,5 @@
 import { Track } from "../types/song";
+import { DEFAULT_ADVANCED } from "../state/instrumentDefaults";
 
 const midiToFreq = (midi: number): number => 440 * 2 ** ((midi - 69) / 12);
 const MIN_GAIN = 0.0001;
@@ -12,6 +13,7 @@ interface SynthVoice {
   trackId: string;
   state: VoiceState;
   activeUntil: number;
+  sources: AudioScheduledSourceNode[];
   amp: GainNode;
   filter: BiquadFilterNode;
   shaper: WaveShaperNode;
@@ -63,11 +65,24 @@ class SynthVoicePool {
     const now = context.currentTime;
     for (const voiceList of this.voices.values()) {
       for (const voice of voiceList) {
+        for (const source of voice.sources) { try { source.stop(now); } catch { /* Already stopped. */ } }
+        voice.sources = [];
         voice.amp.gain.cancelScheduledValues(now);
         voice.amp.gain.setTargetAtTime(MIN_GAIN, now, 0.01);
         voice.state = "free";
         voice.activeUntil = now;
       }
+    }
+  }
+
+  prune(trackIds: Set<string>): void {
+    for (const [id, voices] of this.voices) {
+      if (trackIds.has(id)) continue;
+      for (const voice of voices) {
+        for (const source of voice.sources) { try { source.stop(); } catch { /* Ended. */ } }
+        for (const node of [voice.amp,voice.filter,voice.shaper,voice.mix,voice.aGain,voice.bGain,voice.subGain,voice.noiseGain,voice.aPan,voice.bPan,voice.subPan,voice.noiseFilter]) node.disconnect();
+      }
+      this.voices.delete(id);
     }
   }
 
@@ -112,6 +127,8 @@ class SynthVoicePool {
     const fallback = [...pool].sort((a, b) => a.activeUntil - b.activeUntil)[0];
     this.steals += 1;
     this.stealsByTrack.set(track.id, (this.stealsByTrack.get(track.id) ?? 0) + 1);
+    for (const source of fallback.sources) { try { source.stop(when); } catch { /* Already stopped. */ } }
+    fallback.sources = [];
     fallback.state = "active";
     fallback.amp.gain.cancelScheduledValues(when);
     fallback.amp.gain.setValueAtTime(MIN_GAIN, when);
@@ -160,6 +177,7 @@ class SynthVoicePool {
       trackId,
       state: "free",
       activeUntil: context.currentTime,
+      sources: [],
       amp,
       filter,
       shaper,
@@ -177,6 +195,21 @@ class SynthVoicePool {
 }
 
 export class InstrumentEngine {
+  pruneTracks(song: {tracks: Track[]}): void { this.synthVoices.prune(new Set(song.tracks.map(t=>t.id))); }
+
+  private drumSources = new Set<AudioScheduledSourceNode>();
+
+  private trackDrumSources(sources: AudioScheduledSourceNode[], nodes: AudioNode[]): void {
+    let remaining = sources.length;
+    for (const source of sources) {
+      this.drumSources.add(source);
+      source.onended = () => {
+        this.drumSources.delete(source);
+        source.disconnect();
+        if (--remaining === 0) for (const node of nodes) node.disconnect();
+      };
+    }
+  }
   private readonly synthVoices: SynthVoicePool;
 
   constructor(
@@ -189,6 +222,9 @@ export class InstrumentEngine {
 
   stopAllVoices(): void {
     this.synthVoices.stopAll();
+    const now = this.getContext()?.currentTime ?? 0;
+    for (const source of this.drumSources) { try { source.stop(now); } catch { /* Already stopped. */ } }
+    this.drumSources.clear();
   }
 
   resetDiagnostics(): void {
@@ -243,6 +279,8 @@ export class InstrumentEngine {
       filterEnvAmount,
     } = track.instrument;
 
+    const advanced = { ...DEFAULT_ADVANCED, ...track.instrument.advanced };
+    voice.filter.type = advanced.filterMode;
     const stepDuration = 60 / tempo / 4;
     const noteDuration = Math.max(0.04, stepDuration * lengthSteps);
     const safeAttack = Math.max(0.0025, attack);
@@ -267,7 +305,7 @@ export class InstrumentEngine {
     const stopAt = when + noteDuration + safeRelease + 0.02;
     const fadeOutAt = Math.max(when + oscFadeIn, stopAt - oscFadeOut);
 
-    const baseCutoff = Math.max(120, cutoff * (1 - lofiAmount * 0.3));
+    const baseCutoff = Math.min(context.sampleRate * .45, Math.max(20, cutoff * 2 ** ((pitch - 60) / 12 * advanced.keyTracking) * (1 - lofiAmount * 0.3)));
     const envAmount = Math.max(0, Math.min(1, filterEnvAmount));
     const envCutoff = Math.min(12000, baseCutoff * (1 + envAmount * 2.2));
     voice.filter.frequency.cancelScheduledValues(when);
@@ -301,10 +339,11 @@ export class InstrumentEngine {
     voice.subGain.gain.linearRampToValueAtTime(MIN_GAIN, stopAt);
     voice.noiseGain.gain.linearRampToValueAtTime(MIN_GAIN, stopAt);
 
+    const envelopeScale = Math.min(1, noteDuration / Math.max(.001, safeAttack + decay));
     voice.amp.gain.cancelScheduledValues(when);
     voice.amp.gain.setValueAtTime(MIN_GAIN, when);
-    voice.amp.gain.linearRampToValueAtTime(peak, when + safeAttack);
-    voice.amp.gain.linearRampToValueAtTime(Math.max(MIN_GAIN, peak * sustain), when + safeAttack + decay);
+    voice.amp.gain.linearRampToValueAtTime(peak, when + safeAttack * envelopeScale);
+    voice.amp.gain.linearRampToValueAtTime(Math.max(MIN_GAIN, peak * sustain), when + (safeAttack + decay) * envelopeScale);
     voice.amp.gain.setValueAtTime(Math.max(MIN_GAIN, peak * sustain), when + noteDuration);
     voice.amp.gain.linearRampToValueAtTime(MIN_GAIN, when + noteDuration + safeRelease);
 
@@ -317,8 +356,8 @@ export class InstrumentEngine {
     oscB.type = oscWaveformB;
     oscSub.type = oscWaveformA === "sine" ? "sine" : "triangle";
     const baseFreq = midiToFreq(pitch);
-    oscA.frequency.setValueAtTime(baseFreq, when);
-    oscB.frequency.setValueAtTime(baseFreq, when);
+    oscA.frequency.setValueAtTime(baseFreq * 2 ** (advanced.tuneA / 12), when);
+    oscB.frequency.setValueAtTime(baseFreq * 2 ** (advanced.tuneB / 12), when);
     oscSub.frequency.setValueAtTime(Math.max(20, baseFreq * 0.5), when);
     oscA.detune.setValueAtTime(-detuneCents * 0.5, when);
     oscB.detune.setValueAtTime(detuneCents * 0.5, when);
@@ -345,6 +384,25 @@ export class InstrumentEngine {
       lfoDepth.connect(oscSub.detune);
     }
 
+    let modulation: OscillatorNode | null = null;
+    let modulationGain: GainNode | null = null;
+    if (advanced.lfoDepth > .0001) {
+      modulation = context.createOscillator();
+      modulationGain = context.createGain();
+      modulation.type = advanced.lfoWaveform;
+      const division = advanced.lfoSync === "free" ? 0 : Number(advanced.lfoSync.split("/")[1]);
+      modulation.frequency.setValueAtTime(division ? tempo / 60 * division / 4 : advanced.lfoRate, when);
+      const amount = advanced.lfoDepth;
+      const targets: Record<string, AudioParam[]> = {
+        cutoff: [voice.filter.detune], pitch: [oscA.detune, oscB.detune, oscSub.detune],
+        pan: [voice.aPan.pan, voice.bPan.pan, voice.subPan.pan], amplitude: [voice.mix.gain],
+      };
+      modulationGain.gain.setValueAtTime(amount * (advanced.lfoTarget === "cutoff" ? 3600 : advanced.lfoTarget === "pitch" ? 100 : advanced.lfoTarget === "pan" ? .35 : .5), when);
+      modulation.connect(modulationGain);
+      for (const param of targets[advanced.lfoTarget]) modulationGain.connect(param);
+      modulation.start(when); modulation.stop(stopAt);
+    }
+    voice.sources = [oscA, oscB, oscSub, ...(noise.buffer ? [noise] : []), ...(lfo ? [lfo] : []), ...(modulation ? [modulation] : [])];
     oscA.start(when);
     oscB.start(when);
     oscSub.start(when);
@@ -362,19 +420,20 @@ export class InstrumentEngine {
     voice.activeUntil = stopAt;
     voice.state = "release";
 
-    let remainingEnded = 3;
+    const sources = [...voice.sources];
+    let remainingEnded = sources.length;
     const markEnded = () => {
       remainingEnded -= 1;
       if (remainingEnded > 0) {
         return;
       }
+      for (const source of sources) source.disconnect();
+      lfoDepth?.disconnect(); modulationGain?.disconnect();
       if (voice.activeUntil <= context.currentTime + 0.001) {
         voice.state = "free";
       }
     };
-    oscA.onended = markEnded;
-    oscB.onended = markEnded;
-    oscSub.onended = markEnded;
+    for (const source of sources) source.onended = markEnded;
   }
 
   playKick(track: Track, when: number, velocity: number): void {
@@ -450,6 +509,7 @@ export class InstrumentEngine {
     drive.connect(tone);
     tone.connect(output);
 
+    this.trackDrumSources([body, transientNoise, transientTone], [bodyAmp, transientFilter, transientAmp, transientToneAmp, mix, drive, tone]);
     body.start(when);
     transientNoise.start(when);
     transientTone.start(when);
@@ -549,6 +609,7 @@ export class InstrumentEngine {
     bodyEq.connect(topEq);
     topEq.connect(output);
 
+    this.trackDrumSources([noise, snapNoise, toneA, toneB], [noiseHp, noiseBp, noiseAmp, snapHp, snapAmp, toneAmp, mix, drive, bodyEq, topEq]);
     noise.start(when);
     noise.stop(when + decay + 0.03);
     snapNoise.start(when);
@@ -645,6 +706,7 @@ export class InstrumentEngine {
     drive.connect(air);
     air.connect(output);
 
+    this.trackDrumSources([noise, ...metallicOscs], [noiseHp, noiseBp, noiseAmp, metallicMix, metallicHp, metallicBp, metallicAmp, mix, drive, air, ...metallicGains]);
     noise.start(when);
     noise.stop(when + decay + 0.014);
     for (const osc of metallicOscs) {

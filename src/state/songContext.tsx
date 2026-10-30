@@ -6,17 +6,13 @@ import {
   useEffect,
   useMemo,
   useState,
+  useReducer,
 } from "react";
-import { HistoryEntry, JsonPatchOp, PatchMeta, SongState } from "../types/song";
+import { JsonPatchOp, PatchMeta, SongState } from "../types/song";
 import { createDefaultSong } from "./defaultSong";
-import { applyPatch, invertPatch } from "./patch";
-import { normalizeSongState } from "./songNormalization";
-
-interface PersistedState {
-  song: SongState;
-  past: HistoryEntry[];
-  future: HistoryEntry[];
-}
+import { applyPatch } from "./patch";
+import { historyReducer, HistoryState } from "./history";
+import { assertSongState, parseProject } from "./project";
 
 interface PersistedSongSnapshot {
   version: 1;
@@ -29,6 +25,8 @@ interface SongContextValue {
   auditionPatchId: string | null;
   canUndo: boolean;
   canRedo: boolean;
+  saveStatus: "saved" | "saving" | "error";
+  stateError: string | null;
   commitPatch: (patch: PatchMeta) => void;
   startAudition: (patch: PatchMeta) => void;
   stopAudition: () => void;
@@ -45,48 +43,18 @@ const SongContext = createContext<SongContextValue | undefined>(undefined);
 const patchId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 const STORAGE_KEY = "audio-sequencer:autosave:v1";
 
-const isSongStateLike = (value: unknown): value is SongState => {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-  const candidate = value as Partial<SongState>;
-  if (
-    typeof candidate.tempo !== "number" ||
-    typeof candidate.swing !== "number" ||
-    typeof candidate.bars !== "number" ||
-    !Array.isArray(candidate.tracks)
-  ) {
-    return false;
-  }
-  return candidate.tracks.every((track) => {
-    if (!track || typeof track !== "object") {
-      return false;
-    }
-    const t = track as Partial<SongState["tracks"][number]>;
-    return (
-      typeof t.id === "string" &&
-      typeof t.name === "string" &&
-      (t.type === "synth" || t.type === "drums") &&
-      !!t.instrument &&
-      typeof t.instrument === "object" &&
-      !!t.patterns &&
-      typeof t.patterns === "object" &&
-      Array.isArray(t.lane)
-    );
-  });
-};
-
-const loadInitial = (): PersistedState => {
+const loadInitial = (): HistoryState => {
   if (typeof window !== "undefined") {
     try {
       const raw = window.localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<PersistedSongSnapshot>;
-        if (parsed.version === 1 && isSongStateLike(parsed.song)) {
+        if (parsed.version === 1 && parsed.song) {
           return {
-            song: normalizeSongState(parsed.song),
+            song: parseProject(parsed.song),
             past: [],
             future: [],
+            error: null,
           };
         }
       }
@@ -94,15 +62,24 @@ const loadInitial = (): PersistedState => {
       console.warn("[song] Failed to load autosave snapshot", error);
     }
   }
+  if (typeof window !== "undefined") {
+    try {
+      const backup = JSON.parse(window.localStorage.getItem(`${STORAGE_KEY}:backup`) || "null");
+      if (backup?.version === 1) return { song: parseProject(backup.song), past: [], future: [], error: "Recovered the previous local snapshot." };
+    } catch { /* No valid recovery snapshot. */ }
+  }
   return {
     song: createDefaultSong(),
     past: [],
     future: [],
+    error: null,
   };
 };
 
 export const SongProvider = ({ children }: PropsWithChildren) => {
-  const [{ song, past, future }, setState] = useState<PersistedState>(() => loadInitial());
+  const [{ song, past, future, error }, dispatch] = useReducer(historyReducer, undefined, loadInitial);
+  const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
+  const [stateError, setStateError] = useState<string | null>(null);
   const [previewSong, setPreviewSong] = useState<SongState | null>(null);
   const [auditionPatchId, setAuditionPatchId] = useState<string | null>(null);
 
@@ -110,34 +87,48 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
     if (typeof window === "undefined") {
       return;
     }
-    try {
-      const snapshot: PersistedSongSnapshot = {
-        version: 1,
-        song,
-      };
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-    } catch (error) {
-      console.warn("[song] Failed to persist autosave snapshot", error);
-    }
+    setSaveStatus("saving");
+    const persist = () => {
+      try {
+        const snapshot: PersistedSongSnapshot = { version: 1, song };
+        const old = window.localStorage.getItem(STORAGE_KEY);
+        if (old) {
+          try {
+            const previous = JSON.parse(old);
+            if (previous.version === 1) { parseProject(previous.song); window.localStorage.setItem(`${STORAGE_KEY}:backup`, old); }
+          } catch { /* Preserve the last validated backup if current storage is corrupt. */ }
+        }
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+        setSaveStatus("saved");
+      } catch { setSaveStatus("error"); }
+    };
+    const timer = window.setTimeout(persist, 350);
+    const flush = () => persist();
+    const onVisibility = () => { if (document.visibilityState === "hidden") persist(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
   }, [song]);
 
   const commitPatch = useCallback((patch: PatchMeta) => {
-    setState((prev) => {
-      const inverseOps = invertPatch(prev.song, patch.ops);
-      const nextSong = applyPatch(prev.song, patch.ops);
-      const entry: HistoryEntry = { patch, inverseOps };
-      return {
-        song: nextSong,
-        past: [...prev.past, entry],
-        future: [],
-      };
-    });
+    setPreviewSong(null);
+    setAuditionPatchId(null);
+    dispatch({ type: "commit", patch, at: Date.now() });
+    setStateError(null);
   }, []);
 
   const startAudition = useCallback(
     (patch: PatchMeta) => {
-      setPreviewSong(applyPatch(song, patch.ops));
-      setAuditionPatchId(patch.id);
+      try {
+        const next = applyPatch(song, patch.ops);
+        assertSongState(next);
+        setPreviewSong(next);
+        setAuditionPatchId(patch.id);
+      } catch { setStateError("This proposal could not be auditioned safely."); }
     },
     [song]
   );
@@ -156,57 +147,25 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
   );
 
   const undo = useCallback(() => {
-    setState((prev) => {
-      const entry = prev.past[prev.past.length - 1];
-      if (!entry) {
-        return prev;
-      }
-      const nextSong = applyPatch(prev.song, entry.inverseOps);
-      return {
-        song: nextSong,
-        past: prev.past.slice(0, -1),
-        future: [entry, ...prev.future],
-      };
-    });
+    dispatch({type:"undo"});
     stopAudition();
   }, [stopAudition]);
 
   const redo = useCallback(() => {
-    setState((prev) => {
-      const entry = prev.future[0];
-      if (!entry) {
-        return prev;
-      }
-      const nextSong = applyPatch(prev.song, entry.patch.ops);
-      return {
-        song: nextSong,
-        past: [...prev.past, entry],
-        future: prev.future.slice(1),
-      };
-    });
+    dispatch({type:"redo"});
     stopAudition();
   }, [stopAudition]);
 
   const resetSong = useCallback(() => {
-    setState({
-      song: createDefaultSong(),
-      past: [],
-      future: [],
-    });
+    dispatch({type:"load",song:createDefaultSong()});
     stopAudition();
   }, [stopAudition]);
 
-  const importSong = useCallback(
-    (nextSong: SongState) => {
-      setState({
-        song: normalizeSongState(nextSong),
-        past: [],
-        future: [],
-      });
-      stopAudition();
-    },
-    [stopAudition]
-  );
+  const importSong = useCallback((nextSong: SongState) => {
+    const validated = parseProject(nextSong);
+    dispatch({type:"load",song:validated});
+    stopAudition();
+  }, [stopAudition]);
 
   const applySingleReplace = useCallback(
     (path: string, value: unknown, label: string, author: "user" | "ai" = "user") => {
@@ -229,6 +188,8 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
       auditionPatchId,
       canUndo: past.length > 0,
       canRedo: future.length > 0,
+      saveStatus,
+      stateError: stateError ?? error,
       commitPatch,
       startAudition,
       stopAudition,
@@ -245,6 +206,9 @@ export const SongProvider = ({ children }: PropsWithChildren) => {
       auditionPatchId,
       past.length,
       future.length,
+      saveStatus,
+      stateError,
+      error,
       commitPatch,
       startAudition,
       stopAudition,

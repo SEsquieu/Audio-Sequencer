@@ -57,7 +57,8 @@ export const scheduleSongStep = (
   song: SongState,
   tick: ScheduledTick,
   mutedTrackIds: ReadonlySet<string>,
-  instrumentEngine: InstrumentEngine
+  instrumentEngine: InstrumentEngine,
+  random: () => number = Math.random
 ): void => {
   const events: ScheduledStepEvent[] = [];
 
@@ -74,21 +75,27 @@ export const scheduleSongStep = (
     if (track.type === "synth" && pattern.type === "synth") {
       const notes = normalizeSynthCell(pattern.steps[tick.step]);
       for (const note of notes) {
-        events.push({
+        const probability = note.probability ?? 1;
+        if (probability < 1 && random() >= probability) continue;
+        const ratchet = Math.max(1, Math.min(8, Math.round(note.ratchet ?? 1)));
+        const stepDuration = 60 / song.tempo / 4;
+        const swingFactor = tick.step % 2 === 0 ? 1 - song.swing * .5 : 1 + song.swing * .5;
+        for (let repeat = 0; repeat < ratchet; repeat += 1) events.push({
           type: "synthNote",
           trackIndex,
           trackId: track.id,
           pitch: note.pitch,
           velocity: note.velocity,
-          length: note.length,
+          length: ratchet === 1 ? note.length : Math.min(note.length, swingFactor / ratchet * .85),
           tempo: song.tempo,
-          when: tick.when,
+          when: tick.when + repeat * stepDuration * swingFactor / ratchet,
         });
       }
     }
 
     if (track.type === "drums" && pattern.type === "drums") {
       const hit = pattern.steps[tick.step];
+      if (!hit) continue;
       if (hit.kick > 0) {
         events.push({
           type: "drumHit",
@@ -122,7 +129,7 @@ export const scheduleSongStep = (
     }
   }
 
-  events.sort(compareEvents);
+  events.sort((a, b) => a.when - b.when || compareEvents(a, b));
 
   for (const event of events) {
     const track = song.tracks[event.trackIndex];

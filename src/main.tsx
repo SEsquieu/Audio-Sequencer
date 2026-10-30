@@ -11,3 +11,5 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     </SongProvider>
   </React.StrictMode>
 );
+
+import "./workstation.css";

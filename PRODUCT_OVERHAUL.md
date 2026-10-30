@@ -51,3 +51,7 @@ E. Cross-device accessibility/performance testing and polish.
 - Automated regression tests: not yet implemented.
 
 Do not merge or deploy based on this document alone.
+
+## Implementation checkpoint — 2026-10-30
+
+A broad implementation and automated validation checkpoint is now available. See [docs/OVERHAUL_PROGRESS.md](docs/OVERHAUL_PROGRESS.md) for the changelog, architecture findings, reproducible commands, test evidence, limitations, and continuation instructions. Latest completed checks: 35 unit tests, 14 desktop/Android-emulation browser tests, and TypeScript/production build passed. Physical-device, cross-browser, accessibility, and long-session release gates remain open; this branch remains draft.
