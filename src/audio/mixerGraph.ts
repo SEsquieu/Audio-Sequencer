@@ -17,6 +17,9 @@ interface TrackBusEntry {
   rackIn: GainNode;
   rackOut: GainNode;
   postGain: GainNode;
+  pan: StereoPannerNode;
+  meter: AnalyserNode;
+  meterData: Float32Array<ArrayBuffer>;
   sendTap: GainNode;
   sendDelayGain: GainNode;
   sendDelayTone: BiquadFilterNode;
@@ -75,6 +78,9 @@ export class MixerGraph {
   private masterSafetyShaper: WaveShaperNode | null = null;
   private masterSafetyOutput: GainNode | null = null;
   private masterGain: GainNode | null = null;
+  private masterMeter: AnalyserNode | null = null;
+  private meterData = new Float32Array(256);
+  private lastSong: SongState | null = null;
   private delayBus: DelayBus | null = null;
   private reverbBus: ReverbBus | null = null;
   private delayPresetBuses: Partial<Record<Exclude<DelayBusTargetId, "custom">, DelayBus>> = {};
@@ -249,7 +255,10 @@ export class MixerGraph {
     this.masterSafetyDrive.connect(this.masterSafetyShaper);
     this.masterSafetyShaper.connect(this.masterSafetyOutput);
     this.masterSafetyOutput.connect(this.masterGain);
-    this.masterGain.connect(context.destination);
+    this.masterMeter = context.createAnalyser();
+    this.masterMeter.fftSize = 256;
+    this.masterGain.connect(this.masterMeter);
+    this.masterMeter.connect(context.destination);
 
     this.delayBus = this.createDelayBus(context);
     this.reverbBus = this.createReverbBus(context);
@@ -380,6 +389,9 @@ export class MixerGraph {
     const rackIn = context.createGain();
     const rackOut = context.createGain();
     const postGain = context.createGain();
+    const pan = context.createStereoPanner();
+    const meter = context.createAnalyser();
+    meter.fftSize = 256;
     const sendTap = context.createGain();
     const sendDelayGain = context.createGain();
     const sendDelayTone = context.createBiquadFilter();
@@ -416,7 +428,9 @@ export class MixerGraph {
 
     input.connect(rackIn);
     rackOut.connect(postGain);
-    postGain.connect(sendTap);
+    postGain.connect(pan);
+    pan.connect(meter);
+    meter.connect(sendTap);
     sendTap.connect(this.getOutputNode(context));
     if (this.delayBus) {
       sendTap.connect(sendDelayGain);
@@ -451,6 +465,9 @@ export class MixerGraph {
       rackIn,
       rackOut,
       postGain,
+      pan,
+      meter,
+      meterData: new Float32Array(256),
       sendTap,
       sendDelayGain,
       sendDelayTone,
@@ -468,6 +485,8 @@ export class MixerGraph {
         rackIn,
         rackOut,
         postGain,
+        pan,
+        meter,
         sendTap,
         sendDelayGain,
         sendDelayTone,
@@ -656,6 +675,7 @@ export class MixerGraph {
       if (existing.type === desiredType) {
         existing.isMuted = this.mutedTrackIds.has(trackId);
         this.applyTrackAudibilityState(existing, context.currentTime);
+        this.applyMix(trackId, existing);
         this.applyTrackSendState(context, trackId, existing);
         this.applyTrackInsertFxState(trackId, existing);
         return existing.input;
@@ -669,13 +689,35 @@ export class MixerGraph {
     next.baseTrim = this.getTrackBaseTrim(next.type);
     next.isMuted = this.mutedTrackIds.has(trackId);
     this.applyTrackAudibilityState(next, context.currentTime);
+    this.applyMix(trackId, next);
     this.applyTrackSendState(context, trackId, next);
     this.applyTrackInsertFxState(trackId, next);
     this.trackBuses.set(trackId, next);
     return next.input;
   }
 
+  readLevels(): Record<string, number> {
+    const levels: Record<string, number> = {};
+    const peak = (meter: AnalyserNode, data: Float32Array<ArrayBuffer>) => {
+      meter.getFloatTimeDomainData(data);
+      let value = 0; for (let i = 0; i < data.length; i++) value = Math.max(value, Math.abs(data[i]));
+      return value;
+    };
+    if (this.masterMeter) levels.master = peak(this.masterMeter, this.meterData);
+    for (const [id, bus] of this.trackBuses) levels[id] = peak(bus.meter, bus.meterData);
+    return levels;
+  }
+
+  private applyMix(trackId: string, bus: TrackBusEntry): void {
+    const mix = this.lastSong?.tracks.find(t => t.id === trackId)?.mix;
+    const when = bus.input.context.currentTime;
+    this.rampParam(bus.pan.pan, Math.max(-1, Math.min(1, mix?.pan ?? 0)), when);
+    this.rampParam(bus.postGain.gain, bus.isMuted ? 0 : bus.baseTrim * Math.max(0, Math.min(1.5, mix?.volume ?? 1)), when);
+  }
+
   pruneTrackBuses(song: SongState): void {
+    if (this.lastSong === song) return;
+    this.lastSong = song;
     this.trackTypeById.clear();
     this.masterFx = song.masterFx ?? [];
     this.masterInsertRack?.setFxInstances(this.masterFx);
@@ -702,6 +744,7 @@ export class MixerGraph {
       if (existingBus) {
         existingBus.isMuted = this.mutedTrackIds.has(track.id);
         this.applyTrackAudibilityState(existingBus, existingBus.input.context.currentTime);
+        this.applyMix(track.id, existingBus);
         existingBus.insertRack.setRenderOptions({ ecoMode: this.ecoMode });
         existingBus.insertRack.setFxInstances(insertFx);
       }
@@ -730,6 +773,7 @@ export class MixerGraph {
     for (const [trackId, bus] of this.trackBuses.entries()) {
       bus.isMuted = this.mutedTrackIds.has(trackId);
       this.applyTrackAudibilityState(bus, when);
+      this.applyMix(trackId, bus);
     }
   }
 

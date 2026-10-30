@@ -72,6 +72,9 @@ export const normalizeSongState = (song: SongState): SongState => ({
   tracks: song.tracks.map((track) => ({
     ...track,
     instrument: normalizeInstrumentParams(track.type, track.instrument),
+    patterns: Object.fromEntries(Object.entries(track.patterns).map(([id, pattern]) => [id,
+      pattern.type === "synth" ? { ...pattern, steps: pattern.steps.map(cell => cell === null ? [] : Array.isArray(cell) ? cell : [cell]) } : pattern,
+    ])),
     send: {
       delay:
         typeof (track as typeof track & { send?: { delay?: number } }).send?.delay === "number"

@@ -8,7 +8,7 @@ export interface InstrumentPreset {
   send?: Partial<Track["send"]>;
 }
 
-type NumericInstrumentField = Exclude<keyof InstrumentParams, "oscWaveformA" | "oscWaveformB">;
+type NumericInstrumentField = Exclude<keyof InstrumentParams, "oscWaveformA" | "oscWaveformB" | "advanced">;
 
 const numericInstrumentFields: NumericInstrumentField[] = [
   "attack",
@@ -876,6 +876,8 @@ export const getPresetsForType = (type: Track["type"]): InstrumentPreset[] =>
   INSTRUMENT_PRESETS.filter((preset) => preset.type === type);
 
 export const getMatchingPresetId = (type: Track["type"], params: InstrumentParams, send?: Track["send"]): string | null => {
+  if (params.advanced && Object.entries(params.advanced).some(([key, value]) =>
+    value !== ({tuneA:0,tuneB:0,filterMode:"lowpass",keyTracking:0,lfoWaveform:"sine",lfoRate:1,lfoSync:"free",lfoTarget:"cutoff",lfoDepth:0} as Record<string, unknown>)[key])) return null;
   const match = getPresetsForType(type).find((preset) =>
     preset.params.oscWaveformA === params.oscWaveformA &&
     preset.params.oscWaveformB === params.oscWaveformB &&

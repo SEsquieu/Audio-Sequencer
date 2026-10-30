@@ -5,7 +5,20 @@ export type WaveformType = "sine" | "triangle" | "sawtooth" | "square";
 export type DelayBusTargetId = "custom" | "echoA" | "echoB";
 export type ReverbBusTargetId = "custom" | "roomA" | "hallB";
 
+export interface AdvancedSynthParams {
+  tuneA: number;
+  tuneB: number;
+  filterMode: "lowpass" | "highpass" | "bandpass" | "notch";
+  keyTracking: number;
+  lfoWaveform: WaveformType;
+  lfoRate: number;
+  lfoSync: "free" | "1/4" | "1/8" | "1/16" | "1/2" | "1/1";
+  lfoTarget: "cutoff" | "pitch" | "pan" | "amplitude";
+  lfoDepth: number;
+}
+
 export interface InstrumentParams {
+  advanced?: AdvancedSynthParams;
   attack: number;
   decay: number;
   sustain: number;
@@ -31,6 +44,8 @@ export interface SynthStep {
   pitch: number;
   length: number;
   velocity: number;
+  probability?: number;
+  ratchet?: number;
 }
 
 export interface DrumStep {
@@ -52,6 +67,7 @@ export interface DrumPattern {
 export type Pattern = SynthPattern | DrumPattern;
 
 export interface Track {
+  mix?: { volume: number; pan: number };
   id: string;
   name: string;
   type: TrackType;
@@ -102,6 +118,8 @@ export interface PerformanceState {
 }
 
 export interface SongState {
+  title?: string;
+  masterVolume?: number;
   tempo: number;
   swing: number;
   bars: number;
